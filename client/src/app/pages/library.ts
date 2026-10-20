@@ -360,11 +360,18 @@ export class LibraryPage implements OnInit, OnDestroy {
 		}
 	}
 
+	/** The card whose Copy button shows "Copied" for a moment. */
+	protected readonly copiedId = signal<number | null>(null);
+	private copiedTimer: ReturnType<typeof setTimeout> | undefined;
+
 	async quickCopy(m: Meme, e: Event) {
 		e.stopPropagation();
 		try {
 			await copyImage(m.url);
-			this.toasts.show('Copied! Paste it anywhere.');
+			this.copiedId.set(m.id);
+			clearTimeout(this.copiedTimer);
+			this.copiedTimer = setTimeout(() => this.copiedId.set(null), 1800);
+			if (m.animated) this.toasts.show('Copied a still frame. Open it and use Download to keep the animation.');
 		} catch (err) {
 			this.toasts.error(errorMessage(err));
 		}

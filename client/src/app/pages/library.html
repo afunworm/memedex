@@ -177,13 +177,23 @@
 				✓
 			</button>
 
-			<!-- Quick copy -->
+			<!-- Quick copy: always visible (touch screens can't hover) -->
 			<button
 				type="button"
-				class="absolute right-2 top-2 rounded-md bg-black/60 px-2 py-1 text-xs font-medium text-white opacity-0 backdrop-blur transition hover:bg-amber-400 hover:text-zinc-950 group-hover:opacity-100"
+				class="absolute right-2 top-2 inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold shadow-md shadow-black/40 backdrop-blur transition"
+				[class]="copiedId() === m.id ? 'bg-emerald-500 text-white' : 'bg-black/65 text-white hover:bg-amber-400 hover:text-zinc-950'"
 				(click)="quickCopy(m, $event)"
+				[attr.aria-label]="'Copy ' + (m.title || 'image')"
 			>
-				Copy
+				@if (copiedId() === m.id) {
+					<svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5 9-10" stroke-linecap="round" stroke-linejoin="round" /></svg>
+					Copied
+				} @else {
+					<svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+						<rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" stroke-linecap="round" />
+					</svg>
+					Copy
+				}
 			</button>
 
 			<!-- AI working -->
