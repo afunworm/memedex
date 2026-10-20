@@ -18,7 +18,7 @@ const MAX_MEAN_DIFF = 5;
 const CHANGED = 48;
 const MAX_CHANGED = 0.01;
 /** Width/height ratios must be this close; a crop or different layout isn't a duplicate. */
-const MAX_ASPECT_DIFF = 0.12;
+export const MAX_ASPECT_DIFF = 0.12;
 
 export interface DuplicateGroup {
 	/** The suggested one to keep (largest image), listed first in items. */
@@ -50,7 +50,7 @@ function distance(a: Uint32Array, b: Uint32Array): number {
 }
 
 /** Do two 32x32 RGB thumbnails show the same picture? */
-function sameImage(a: Buffer, b: Buffer): boolean {
+export function sameImage(a: Buffer, b: Buffer): boolean {
 	if (a.length !== b.length) return false;
 	const pixels = a.length / 3;
 	let total = 0;

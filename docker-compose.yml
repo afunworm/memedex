@@ -24,3 +24,5 @@ services:
    - OIDC_CLIENT_ID
    # Encrypts each user's Claude API key at rest (at least 32 characters)
    - SETTINGS_ENCRYPTION_KEY
+   # Optional: public address, e.g. https://memedex.example.com (only for SerpApi image search)
+   - PUBLIC_URL

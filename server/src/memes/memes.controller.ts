@@ -39,12 +39,16 @@ export class MemesController {
 		@Query('limit') limit = '60',
 		@Query('tag') tag?: string,
 		@Query('undescribed') undescribed?: string,
+		@Query('lowres') lowRes?: string,
+		@Query('review') review?: string,
 	) {
 		return this.memes.list(user.sub, {
 			offset: Math.max(0, Number(offset) || 0),
 			limit: Math.min(200, Math.max(1, Number(limit) || 60)),
 			tag: tag || undefined,
 			undescribed: undescribed === '1',
+			lowRes: lowRes === '1',
+			review: review === '1',
 		});
 	}
 

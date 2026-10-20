@@ -18,8 +18,8 @@ People search in two ways:
 2. They paste a message they received and want an image that answers it.
 
 So for each image, write:
-- descriptions: 8-15 short lines, each a different way the image gets used. Most should be things a person would mean or say when they send it (e.g. a dog raising its eyebrows: "really?", "what did you just say", "excuse me?", "I'm going to pretend I didn't hear that"). Also include a few situations it replies to ("when someone says something wildly inappropriate at work") and one or two plain descriptions of what's shown, including the name of the meme or the people / characters if well known. Cover different moods and phrasings; don't repeat the same idea with small word changes. Keep each line under 15 words.
-- tags: 5-15 single words or short phrases, lower case: emotions, reaction type, subject, meme name, source (movie / show / game) when known.
+- descriptions: 25-35 short lines, each a different way the image gets used. The more distinct ways someone might look for it, the better: it's found by whichever line matches best. Most should be things a person would mean or say when they send it (e.g. a dog raising its eyebrows: "really?", "what did you just say", "excuse me?", "I'm going to pretend I didn't hear that"). Also include a few situations it replies to ("when someone says something wildly inappropriate at work") and one or two plain descriptions of what's shown, including the name of the meme or the people / characters if well known. Cover different moods, phrasings, slang and situations; don't repeat the same idea with small word changes. Keep each line under 15 words.
+- tags: 8-20 single words or short phrases, lower case: emotions, reaction type, subject, meme name, source (movie / show / game) when known.
 - title: a 2-6 word name for the image (the meme's common name if it has one).
 - ocr_text: the text written on the image, exactly as written, or "" if none.
 
@@ -205,7 +205,7 @@ export class ClaudeService {
 		candidates.forEach((c, i) => {
 			content.push({
 				type: 'text',
-				text: `Candidate ${i + 1}${c.title ? ` "${c.title}"` : ''}\nDescriptions: ${c.descriptions.slice(0, 12).join(' | ') || '(none)'}\nTags: ${c.tags.join(', ') || '(none)'}`,
+				text: `Candidate ${i + 1}${c.title ? ` "${c.title}"` : ''}\nDescriptions: ${c.descriptions.slice(0, 20).join(' | ') || '(none)'}\nTags: ${c.tags.join(', ') || '(none)'}`,
 			});
 			if (c.image) content.push({ type: 'image', source: { type: 'base64', media_type: c.image.mediaType, data: c.image.data } });
 		});

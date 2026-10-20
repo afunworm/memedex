@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { rm } from 'fs/promises';
 import { join } from 'path';
 import sharp from 'sharp';
-import { DATA_DIR, IMAGES_DIR, THUMBS_DIR } from '../config';
+import { CANDIDATES_DIR, DATA_DIR, IMAGES_DIR, THUMBS_DIR } from '../config';
 import { sign } from '../common/secret-crypto';
 
 const FORMATS: Record<string, { ext: string; mime: string }> = {
@@ -26,7 +26,8 @@ export interface StoredImage {
 	sig: Buffer;
 }
 
-export type ImageKind = 'full' | 'thumb';
+/** full / thumb: a meme (id = meme id); cand: a better version awaiting review (id = candidate id). */
+export type ImageKind = 'full' | 'thumb' | 'cand';
 
 /** Signed image URLs stay the same for this long, so browsers can cache them. */
 const URL_WINDOW_MS = 6 * 3600_000;
@@ -53,6 +54,15 @@ export class ImageStore {
 
 	thumbPath(sub: string, sha: string) {
 		return join(THUMBS_DIR, this.userDir(sub), `${sha}.webp`);
+	}
+
+	/** Folder for one meme's better versions awaiting review. */
+	candidateDir(memeId: number) {
+		return join(CANDIDATES_DIR, String(memeId));
+	}
+
+	async removeCandidates(memeId: number) {
+		await rm(this.candidateDir(memeId), { recursive: true, force: true });
 	}
 
 	/** Checks the file really is a supported image, then writes it and its thumbnail. */

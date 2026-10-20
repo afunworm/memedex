@@ -18,9 +18,12 @@ import { AiQueueService } from './ai/ai-queue.service';
 import { EnvController } from './env.controller';
 import { DuplicatesService } from './duplicates/duplicates.service';
 import { DuplicatesController } from './duplicates/duplicates.controller';
+import { UpscalerService } from './improve/upscaler.service';
+import { ImproveService } from './improve/improve.service';
+import { ImproveController } from './improve/improve.controller';
 
 @Module({
-	controllers: [EnvController, SettingsController, ImagesController, MemesController, SearchController, DuplicatesController],
+	controllers: [EnvController, SettingsController, ImagesController, MemesController, SearchController, DuplicatesController, ImproveController],
 	providers: [
 		DbService,
 		AuthService,
@@ -33,6 +36,8 @@ import { DuplicatesController } from './duplicates/duplicates.controller';
 		ClaudeService,
 		AiQueueService,
 		DuplicatesService,
+		UpscalerService,
+		ImproveService,
 		{ provide: APP_GUARD, useClass: AuthGuard },
 	],
 })

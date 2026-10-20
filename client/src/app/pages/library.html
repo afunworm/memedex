@@ -117,7 +117,7 @@
 		@if (busyCount()) {
 			<span class="chip border-violet-800 text-violet-200">
 				<span class="size-3 animate-spin rounded-full border-2 border-violet-900 border-t-violet-300"></span>
-				Describing {{ busyCount() }}…
+				Working on {{ busyCount() }}…
 			</span>
 		}
 		<a routerLink="/duplicates" class="btn-ghost" title="Find images that are the same picture at another size or format">Find duplicates</a>
@@ -131,15 +131,31 @@
 		</label>
 	</div>
 
-	@if (mode() === 'find' && !searched() && (tags().length || undescribed())) {
+	@if (mode() === 'find' && !searched() && (items().length || tag() || filter())) {
 		<div class="-mx-4 mb-5 flex gap-1.5 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
 			<button
 				type="button"
 				class="chip shrink-0"
-				[class]="undescribed() ? '!border-amber-400 !text-amber-200' : 'hover:border-zinc-500'"
-				(click)="toggleUndescribed()"
+				[class]="filter() === 'undescribed' ? '!border-amber-400 !text-amber-200' : 'hover:border-zinc-500'"
+				(click)="toggleFilter('undescribed')"
 			>
 				Needs descriptions
+			</button>
+			<button
+				type="button"
+				class="chip shrink-0"
+				[class]="filter() === 'lowres' ? '!border-amber-400 !text-amber-200' : 'hover:border-zinc-500'"
+				(click)="toggleFilter('lowres')"
+			>
+				Low-res
+			</button>
+			<button
+				type="button"
+				class="chip shrink-0"
+				[class]="filter() === 'review' ? '!border-amber-400 !text-amber-200' : 'hover:border-zinc-500'"
+				(click)="toggleFilter('review')"
+			>
+				✨ To review
 			</button>
 			@for (t of tags(); track t.tag) {
 				<button type="button" class="chip shrink-0" [class]="tag() === t.tag ? '!border-amber-400 !text-amber-200' : 'hover:border-zinc-500'" (click)="setTag(t.tag)">
@@ -202,12 +218,22 @@
 					<span class="size-3 animate-spin rounded-full border-2 border-violet-900 border-t-violet-300"></span>
 					{{ m.aiStatus === 'queued' ? 'Waiting…' : 'Describing…' }}
 				</div>
+			} @else if (m.improveStatus === 'queued' || m.improveStatus === 'running') {
+				<div class="absolute inset-x-0 bottom-0 flex items-center gap-2 bg-gradient-to-t from-black/80 px-3 pb-2 pt-6 text-xs text-violet-200">
+					<span class="size-3 animate-spin rounded-full border-2 border-violet-900 border-t-violet-300"></span>
+					{{ m.improveStatus === 'queued' ? 'Waiting…' : 'Improving…' }}
+				</div>
 			}
 
 			@let failed = m.aiStatus === 'error';
 			@let bare = !m.descriptions.length && m.aiStatus !== 'queued' && m.aiStatus !== 'running';
-			@if (m.reason || m.matched || m.title || failed || bare) {
+			@if (m.reason || m.matched || m.title || failed || bare || m.candidates || m.lowRes) {
 				<div class="border-t border-zinc-800 px-3 py-2 text-xs">
+					@if (m.candidates) {
+						<div class="mb-1 font-medium text-amber-300">✨ Better version ready</div>
+					} @else if (m.lowRes) {
+						<div class="mb-1 text-zinc-500">Low-res · {{ m.width }}×{{ m.height }}</div>
+					}
 					@if (m.title || failed || bare) {
 						<div class="flex items-center gap-2">
 							@if (m.title) {
@@ -257,7 +283,7 @@
 		@if (searched() && !results().length) {
 			<p class="py-16 text-center text-zinc-500">Nothing matches "{{ searched() }}". Try other words, or ✨ AI describe more of your images.</p>
 		} @else if (!searched() && !loading() && !items().length) {
-			@if (tag() || undescribed()) {
+			@if (tag() || filter()) {
 				<p class="py-16 text-center text-zinc-500">Nothing here.</p>
 			} @else {
 				<label class="mt-4 flex cursor-pointer flex-col items-center rounded-3xl border-2 border-dashed border-zinc-800 px-6 py-20 text-center transition hover:border-amber-400/60">
@@ -280,6 +306,9 @@
 	<div class="fixed inset-x-0 bottom-4 z-30 mx-auto flex w-fit items-center gap-2 rounded-2xl border border-zinc-700 bg-zinc-900/95 p-2 pl-4 shadow-2xl shadow-black/60 backdrop-blur">
 		<span class="mr-2 text-sm font-medium">{{ selected().size }} selected</span>
 		<button type="button" class="btn-primary" (click)="generate([...selected()])">✨ AI describe</button>
+		<button type="button" class="btn-secondary" (click)="improve([...selected()], 'auto')" title="Find a bigger copy online (if set up), else AI enhance. Results wait for your review.">
+			Improve quality
+		</button>
 		<button type="button" class="btn-danger" (click)="removeSelected()">Delete</button>
 		<button type="button" class="btn-ghost" (click)="clearSelection()">Cancel</button>
 	</div>
@@ -299,5 +328,7 @@
 		(changed)="onChanged($event)"
 		(deleted)="onDeleted($event)"
 		(generateRequested)="generate([$event])"
+		(improveRequested)="improve([$event.id], $event.mode)"
+		[canSearch]="canSearch()"
 	/>
 }

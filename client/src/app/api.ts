@@ -16,6 +16,12 @@ export interface Meme {
 	tags: string[];
 	aiStatus: 'none' | 'queued' | 'running' | 'done' | 'error';
 	aiError: string | null;
+	/** "Improve quality" job (find a bigger copy online / AI enhance). */
+	improveStatus: 'none' | 'queued' | 'running' | 'done' | 'error';
+	improveError: string | null;
+	/** Better versions waiting to be accepted or discarded. */
+	candidates: number;
+	lowRes: boolean;
 	createdAt: string;
 	url: string;
 	thumbUrl: string;
@@ -31,8 +37,26 @@ export interface Settings {
 	apiKeyProblem: string | null;
 	model: string;
 	models: { id: string; label: string }[];
+	search: { provider: string | null; hasKey: boolean; keyHint: string | null; keyProblem: string | null };
+	searchProviders: { id: string; label: string; keyHelp: string }[];
 	encryptionProblem: string | null;
 }
+
+/** A better version of a meme, waiting for the user to accept or discard it. */
+export interface Candidate {
+	id: number;
+	kind: 'web' | 'enhance';
+	mime: string;
+	width: number;
+	height: number;
+	bytes: number;
+	sourceUrl: string | null;
+	sourcePage: string | null;
+	createdAt: string;
+	url: string;
+}
+
+export type ImproveMode = 'web' | 'enhance' | 'auto';
 
 export interface Me extends Settings {
 	sub: string;
@@ -79,13 +103,17 @@ export class Api {
 		return firstValueFrom(this.http.get<Me>('/api/me'));
 	}
 
-	list(opts: { offset?: number; limit?: number; tag?: string; undescribed?: boolean } = {}) {
+	list(
+		opts: { offset?: number; limit?: number; tag?: string; undescribed?: boolean; lowRes?: boolean; review?: boolean } = {},
+	) {
 		const params: Record<string, string> = {
 			offset: String(opts.offset ?? 0),
 			limit: String(opts.limit ?? 60),
 		};
 		if (opts.tag) params['tag'] = opts.tag;
 		if (opts.undescribed) params['undescribed'] = '1';
+		if (opts.lowRes) params['lowres'] = '1';
+		if (opts.review) params['review'] = '1';
 		return firstValueFrom(this.http.get<{ total: number; items: Meme[] }>('/api/memes', { params }));
 	}
 
@@ -109,6 +137,22 @@ export class Api {
 
 	generate(ids: number[]) {
 		return firstValueFrom(this.http.post<{ queued: number[] }>('/api/memes/ai', { ids }));
+	}
+
+	improve(ids: number[], mode: ImproveMode) {
+		return firstValueFrom(this.http.post<{ queued: number[] }>('/api/memes/improve', { ids, mode }));
+	}
+
+	candidates(id: number) {
+		return firstValueFrom(this.http.get<Candidate[]>(`/api/memes/${id}/candidates`));
+	}
+
+	acceptCandidate(id: number, candidateId: number) {
+		return firstValueFrom(this.http.post<Meme>(`/api/memes/${id}/candidates/${candidateId}/accept`, {}));
+	}
+
+	discardCandidate(id: number, candidateId: number) {
+		return firstValueFrom(this.http.delete<Meme>(`/api/memes/${id}/candidates/${candidateId}`));
 	}
 
 	remove(ids: number[]) {
@@ -143,8 +187,12 @@ export class Api {
 		return firstValueFrom(this.http.get<Settings>('/api/settings'));
 	}
 
-	saveSettings(body: { apiKey?: string; model?: string }) {
+	saveSettings(body: { apiKey?: string; model?: string; searchProvider?: string; searchApiKey?: string }) {
 		return firstValueFrom(this.http.put<Settings>('/api/settings', body));
+	}
+
+	testSearch() {
+		return firstValueFrom(this.http.post<{ ok: boolean; message?: string; error?: string }>('/api/settings/test-search', {}));
 	}
 
 	testSettings() {

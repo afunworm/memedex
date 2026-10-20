@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Api, errorMessage, Settings } from '../api';
 import { Toasts } from '../toast';
@@ -58,6 +58,60 @@ import { Toasts } from '../toast';
 				</section>
 
 				<section class="mt-6 rounded-2xl border border-zinc-800 bg-zinc-900/50 p-6">
+					<h2 class="text-lg font-semibold">Reverse image search</h2>
+					<p class="mt-1 text-sm text-zinc-400">
+						Optional. Used by "Find a better copy online" to look for bigger versions of low-res images. Paid per search, billed
+						to your account with the service. Found copies are only offered for review; nothing is replaced without your OK.
+					</p>
+					<div class="mt-4 grid gap-2 sm:grid-cols-2">
+						@for (p of s.searchProviders; track p.id) {
+							<label
+								class="flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 text-sm transition"
+								[class]="p.id === s.search.provider ? 'border-amber-400 bg-amber-400/5' : 'border-zinc-800 hover:border-zinc-600'"
+							>
+								<input type="radio" name="searchProvider" class="accent-amber-400" [checked]="p.id === s.search.provider" (change)="saveProvider(p.id)" />
+								<span>{{ p.label }}</span>
+							</label>
+						}
+					</div>
+					@if (searchProvider(); as p) {
+						<p class="mt-3 text-xs text-zinc-500">
+							{{ p.keyHelp }}.
+							@if (p.id === 'serpapi') {
+								Google fetches the image from MemeDex, so this needs MemeDex to be reachable from the internet.
+							}
+						</p>
+						@if (s.search.keyProblem) {
+							<p class="mt-3 rounded-lg border border-amber-900 bg-amber-950/40 px-3 py-2 text-sm text-amber-200">{{ s.search.keyProblem }}</p>
+						}
+						<div class="mt-3 text-sm">
+							@if (s.search.hasKey && !s.search.keyProblem) {
+								<span class="chip border-emerald-800 text-emerald-300">Saved · ends in …{{ s.search.keyHint }}</span>
+							} @else if (!s.search.hasKey) {
+								<span class="chip">Not set</span>
+							}
+						</div>
+						<form class="mt-3 flex flex-col gap-2 sm:flex-row" (ngSubmit)="saveSearchKey()">
+							<input
+								class="input font-mono"
+								type="password"
+								name="searchKey"
+								autocomplete="off"
+								[placeholder]="s.search.hasKey ? 'Enter a new key to replace it' : p.label + ' API key'"
+								[(ngModel)]="searchKey"
+							/>
+							<button class="btn-primary shrink-0" type="submit" [disabled]="!searchKey.trim() || busy()">Save key</button>
+						</form>
+						@if (s.search.hasKey) {
+							<div class="mt-3 flex flex-wrap gap-2">
+								<button type="button" class="btn-secondary" (click)="testSearch()" [disabled]="busy()">Test key</button>
+								<button type="button" class="btn-danger" (click)="removeSearchKey()" [disabled]="busy()">Remove key</button>
+							</div>
+						}
+					}
+				</section>
+
+				<section class="mt-6 rounded-2xl border border-zinc-800 bg-zinc-900/50 p-6">
 					<h2 class="text-lg font-semibold">Model</h2>
 					<p class="mt-1 text-sm text-zinc-400">Billed to your key. Opus gives the best descriptions; Haiku is much cheaper for large libraries.</p>
 					<div class="mt-4 grid gap-2">
@@ -85,6 +139,11 @@ export class SettingsPage implements OnInit {
 	protected readonly s = signal<Settings | null>(null);
 	protected readonly busy = signal(false);
 	protected apiKey = '';
+	protected searchKey = '';
+	protected readonly searchProvider = computed(() => {
+		const s = this.s();
+		return s?.searchProviders.find((p) => p.id === s.search.provider) ?? null;
+	});
 
 	async ngOnInit() {
 		try {
@@ -126,6 +185,37 @@ export class SettingsPage implements OnInit {
 		return this.run(async () => {
 			const r = await this.api.testSettings();
 			if (r.ok) this.toasts.show(`Works with ${r.model}`);
+			else this.toasts.error(r.error ?? 'The key did not work');
+		});
+	}
+
+	saveProvider(searchProvider: string) {
+		return this.run(async () => {
+			this.s.set(await this.api.saveSettings({ searchProvider }));
+		});
+	}
+
+	saveSearchKey() {
+		return this.run(async () => {
+			this.s.set(await this.api.saveSettings({ searchApiKey: this.searchKey.trim() }));
+			this.searchKey = '';
+			const r = await this.api.testSearch();
+			if (r.ok) this.toasts.show(`Key saved. ${r.message ?? ''}`);
+			else this.toasts.error(`Key saved, but: ${r.error ?? 'it did not work'}`);
+		});
+	}
+
+	removeSearchKey() {
+		return this.run(async () => {
+			this.s.set(await this.api.saveSettings({ searchApiKey: '' }));
+			this.toasts.show('Key removed');
+		});
+	}
+
+	testSearch() {
+		return this.run(async () => {
+			const r = await this.api.testSearch();
+			if (r.ok) this.toasts.show(r.message ?? 'Works');
 			else this.toasts.error(r.error ?? 'The key did not work');
 		});
 	}

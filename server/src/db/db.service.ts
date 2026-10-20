@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import Database from 'better-sqlite3';
 import { mkdirSync } from 'fs';
-import { DATA_DIR, DB_PATH, IMAGES_DIR, THUMBS_DIR } from '../config';
+import { CANDIDATES_DIR, DATA_DIR, DB_PATH, IMAGES_DIR, THUMBS_DIR } from '../config';
 
 /** Each entry runs once, in order; the index is stored in PRAGMA user_version. */
 const MIGRATIONS: string[] = [
@@ -75,6 +75,32 @@ const MIGRATIONS: string[] = [
 		PRIMARY KEY (a, b)
 	);
 	`,
+	`
+	-- Reverse image search ("find a better copy online"), per user
+	ALTER TABLE users ADD COLUMN search_provider TEXT /* tineye | serpapi */;
+	ALTER TABLE users ADD COLUMN search_api_key TEXT /* encrypted (enc:v1:...), never sent to the browser */;
+
+	-- "Improve quality" jobs (web search / AI enhance) for this meme
+	ALTER TABLE memes ADD COLUMN improve_status TEXT NOT NULL DEFAULT 'none' /* none | queued | running | done | error */;
+	ALTER TABLE memes ADD COLUMN improve_error TEXT /* why the last improve job found nothing or failed */;
+
+	-- Better versions waiting for the user to accept or discard. The original
+	-- is never replaced without confirmation. File: data/candidates/<meme_id>/<file>
+	CREATE TABLE meme_candidates (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		meme_id INTEGER NOT NULL REFERENCES memes(id) ON DELETE CASCADE,
+		kind TEXT NOT NULL,                -- web | enhance
+		file TEXT NOT NULL,
+		mime TEXT NOT NULL,
+		width INTEGER NOT NULL,
+		height INTEGER NOT NULL,
+		bytes INTEGER NOT NULL,
+		source_url TEXT,                   -- web: where the image was downloaded from
+		source_page TEXT,                  -- web: the page it appears on
+		created_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+	CREATE INDEX meme_candidates_meme ON meme_candidates(meme_id);
+	`,
 ];
 
 @Injectable()
@@ -83,7 +109,7 @@ export class DbService implements OnModuleDestroy {
 	readonly db: Database.Database;
 
 	constructor() {
-		for (const dir of [DATA_DIR, IMAGES_DIR, THUMBS_DIR]) mkdirSync(dir, { recursive: true });
+		for (const dir of [DATA_DIR, IMAGES_DIR, THUMBS_DIR, CANDIDATES_DIR]) mkdirSync(dir, { recursive: true });
 		this.db = new Database(DB_PATH);
 		this.db.pragma('journal_mode = WAL');
 		this.db.pragma('foreign_keys = ON');

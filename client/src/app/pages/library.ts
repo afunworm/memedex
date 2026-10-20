@@ -2,12 +2,14 @@ import { Component, computed, HostListener, inject, OnDestroy, OnInit, signal } 
 import { FormsModule } from '@angular/forms';
 import { NgTemplateOutlet } from '@angular/common';
 import { RouterLink } from '@angular/router';
-import { Api, errorMessage, Me, Meme, RespondResult } from '../api';
+import { Api, errorMessage, ImproveMode, Me, Meme, RespondResult } from '../api';
 import { copyImage } from '../clipboard';
 import { Toasts } from '../toast';
 import { MemeDetail } from './meme-detail';
 
 type Mode = 'find' | 'message' | 'situation';
+/** Library filters besides tags. */
+type Filter = 'undescribed' | 'lowres' | 'review';
 const PAGE = 60;
 
 @Component({
@@ -34,7 +36,9 @@ export class LibraryPage implements OnInit, OnDestroy {
 	protected readonly loading = signal(true);
 	protected readonly tags = signal<{ tag: string; count: number }[]>([]);
 	protected readonly tag = signal<string | null>(null);
-	protected readonly undescribed = signal(false);
+	protected readonly filter = signal<Filter | null>(null);
+	/** A reverse image search service is set up (enables "Find better copy online"). */
+	protected readonly canSearch = computed(() => !!this.me()?.search.provider && !!this.me()?.search.hasKey);
 
 	// Find a reaction
 	protected query = '';
@@ -102,7 +106,9 @@ export class LibraryPage implements OnInit, OnDestroy {
 				offset: more ? this.items().length : 0,
 				limit: PAGE,
 				tag: this.tag() ?? undefined,
-				undescribed: this.undescribed(),
+				undescribed: this.filter() === 'undescribed',
+				lowRes: this.filter() === 'lowres',
+				review: this.filter() === 'review',
 			});
 			this.items.set(more ? [...this.items(), ...r.items] : r.items);
 			this.total.set(r.total);
@@ -124,12 +130,12 @@ export class LibraryPage implements OnInit, OnDestroy {
 
 	setTag(t: string | null) {
 		this.tag.set(this.tag() === t ? null : t);
-		this.undescribed.set(false);
+		this.filter.set(null);
 		this.load();
 	}
 
-	toggleUndescribed() {
-		this.undescribed.update((v) => !v);
+	toggleFilter(f: Filter) {
+		this.filter.update((v) => (v === f ? null : f));
 		this.tag.set(null);
 		this.load();
 	}
@@ -243,13 +249,13 @@ export class LibraryPage implements OnInit, OnDestroy {
 					await this.generate(r.created.map((m) => m.id), true);
 				}
 			}
-			if (this.searched() || this.asking() || this.tag() || this.undescribed()) {
+			if (this.searched() || this.asking() || this.tag() || this.filter()) {
 				this.toasts.show('Uploaded. Showing your library.');
 				this.mode.set('find');
 				this.query = '';
 				this.searched.set(null);
 				this.tag.set(null);
-				this.undescribed.set(false);
+				this.filter.set(null);
 				await this.load();
 			}
 		} catch (e) {
@@ -337,10 +343,26 @@ export class LibraryPage implements OnInit, OnDestroy {
 		}
 		try {
 			const r = await this.api.generate(ids);
-			this.patch(ids.map((id) => ({ id, aiStatus: r.queued.includes(id) ? 'queued' : undefined })));
+			this.patch(r.queued, { aiStatus: 'queued' });
 			r.queued.forEach((id) => this.watching.add(id));
 			this.startPolling();
 			if (!quiet) this.toasts.show(`Describing ${r.queued.length} image${r.queued.length === 1 ? '' : 's'}…`);
+			this.clearSelection();
+		} catch (e) {
+			this.toasts.error(errorMessage(e));
+		}
+	}
+
+	/** Look for / make better versions. They wait for review; nothing is replaced here. */
+	async improve(ids: number[], mode: ImproveMode) {
+		try {
+			const r = await this.api.improve(ids, mode);
+			this.patch(r.queued, { improveStatus: 'queued', improveError: null });
+			r.queued.forEach((id) => this.watching.add(id));
+			this.startPolling();
+			if (ids.length > 1) {
+				this.toasts.show(`Improving ${r.queued.length} image${r.queued.length === 1 ? '' : 's'}… Results will wait for your review.`);
+			}
 			this.clearSelection();
 		} catch (e) {
 			this.toasts.error(errorMessage(e));
@@ -388,9 +410,10 @@ export class LibraryPage implements OnInit, OnDestroy {
 		this.reply.update((r) => (r ? { ...r, picks: swap(r.picks), more: swap(r.more) } : r));
 	}
 
-	private patch(changes: { id: number; aiStatus?: Meme['aiStatus'] }[]) {
-		const map = new Map(changes.filter((c) => c.aiStatus).map((c) => [c.id, c.aiStatus!]));
-		const upd = (l: Meme[]) => l.map((m) => (map.has(m.id) ? { ...m, aiStatus: map.get(m.id)! } : m));
+	/** Sets some fields on these memes in every list on the page. */
+	private patch(ids: number[], fields: Partial<Meme>) {
+		const set = new Set(ids);
+		const upd = (l: Meme[]) => l.map((m) => (set.has(m.id) ? { ...m, ...fields } : m));
 		this.items.update(upd);
 		this.results.update(upd);
 		this.reply.update((r) => (r ? { ...r, picks: upd(r.picks), more: upd(r.more) } : r));
@@ -416,7 +439,7 @@ export class LibraryPage implements OnInit, OnDestroy {
 	}
 
 	private watchBusy(list: Meme[]) {
-		for (const m of list) if (m.aiStatus === 'queued' || m.aiStatus === 'running') this.watching.add(m.id);
+		for (const m of list) if (isBusy(m)) this.watching.add(m.id);
 		if (this.watching.size) this.startPolling();
 	}
 
@@ -436,9 +459,12 @@ export class LibraryPage implements OnInit, OnDestroy {
 			this.replace(fresh);
 			let finished = 0;
 			for (const m of fresh) {
-				if (m.aiStatus !== 'queued' && m.aiStatus !== 'running') {
+				if (!isBusy(m)) {
 					this.watching.delete(m.id);
 					finished++;
+					if (m.improveStatus === 'done' && m.candidates && this.openId() !== m.id) {
+						this.toasts.show(`Better version of "${m.title || m.originalName || 'an image'}" ready to review`);
+					}
 				}
 			}
 			// Deleted meanwhile
@@ -450,4 +476,9 @@ export class LibraryPage implements OnInit, OnDestroy {
 	}
 
 	protected busyCount = () => this.watching.size;
+}
+
+/** AI describe or an improve job still running. */
+function isBusy(m: Meme) {
+	return m.aiStatus === 'queued' || m.aiStatus === 'running' || m.improveStatus === 'queued' || m.improveStatus === 'running';
 }

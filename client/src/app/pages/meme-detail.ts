@@ -1,6 +1,6 @@
 import { Component, computed, effect, HostListener, inject, input, output, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Api, errorMessage, Meme } from '../api';
+import { Api, Candidate, errorMessage, ImproveMode, Meme } from '../api';
 import { copyImage, downloadImage, extensionFor } from '../clipboard';
 import { Toasts } from '../toast';
 
@@ -16,8 +16,20 @@ import { Toasts } from '../toast';
 			aria-modal="true"
 		>
 			<div class="relative flex min-h-56 flex-1 flex-col bg-[repeating-conic-gradient(#18181b_0%_25%,#111113_0%_50%)] bg-[length:24px_24px] lg:min-h-0">
+				@if (candidates().length) {
+					<div class="flex flex-wrap justify-center gap-1 border-b border-zinc-800 bg-zinc-950/80 p-2 text-xs">
+						<button type="button" class="rounded-md px-3 py-1.5 font-medium" [class]="viewing() === null ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-400 hover:text-zinc-100'" (click)="viewing.set(null)">
+							Current · {{ meme().width }}×{{ meme().height }}
+						</button>
+						@for (c of candidates(); track c.id) {
+							<button type="button" class="rounded-md px-3 py-1.5 font-medium" [class]="viewing() === c.id ? 'bg-amber-400 text-zinc-950' : 'text-zinc-400 hover:text-zinc-100'" (click)="viewing.set(c.id)">
+								New ({{ c.kind === 'web' ? 'online' : 'AI' }}) · {{ c.width }}×{{ c.height }}
+							</button>
+						}
+					</div>
+				}
 				<div class="flex min-h-0 flex-1 items-center justify-center p-4">
-					<img [src]="meme().url" [alt]="meme().title ?? ''" class="max-h-full max-w-full rounded-lg object-contain shadow-xl" />
+					<img [src]="shownUrl()" [alt]="meme().title ?? ''" class="max-h-full max-w-full rounded-lg object-contain shadow-xl" />
 				</div>
 				<div class="flex flex-wrap items-center justify-center gap-2 border-t border-zinc-800 bg-zinc-950/80 p-3">
 					<button type="button" class="btn-primary" (click)="copy()">Copy image</button>
@@ -35,6 +47,73 @@ import { Toasts } from '../toast';
 				</div>
 
 				<div class="flex-1 space-y-6 overflow-y-auto px-5 py-4">
+					@if (candidates().length) {
+						<section class="rounded-xl border border-amber-500/40 bg-amber-400/5 p-3">
+							<h3 class="text-sm font-semibold text-amber-200">Better version ready to review</h3>
+							<p class="mt-0.5 text-xs text-zinc-400">Compare with the tabs above the image. Your current image stays until you choose to use a new one.</p>
+							@for (c of candidates(); track c.id) {
+								<div class="mt-3 flex gap-3">
+									<button type="button" class="h-16 w-16 shrink-0 overflow-hidden rounded-md border border-zinc-700 bg-zinc-900" (click)="viewing.set(c.id)" aria-label="Show this version">
+										<img [src]="c.url" alt="" class="h-full w-full object-cover" />
+									</button>
+									<div class="min-w-0 flex-1 text-xs">
+										<div class="font-medium text-zinc-200">
+											{{ c.kind === 'web' ? 'Found online' : 'AI enhanced' }} · {{ c.width }}×{{ c.height }} · {{ size(c.bytes) }}
+										</div>
+										@if (c.sourcePage || c.sourceUrl) {
+											<a [href]="c.sourcePage || c.sourceUrl" target="_blank" rel="noopener noreferrer" class="block truncate text-zinc-500 hover:text-zinc-300">{{ host(c.sourcePage || c.sourceUrl) }}</a>
+										} @else if (c.kind === 'enhance') {
+											<div class="text-zinc-500">Check any text on the image: AI can warp letters.</div>
+										}
+										<div class="mt-2 flex gap-2">
+											<button type="button" class="btn-primary px-2.5 py-1 text-xs" (click)="accept(c)" [disabled]="reviewing()">Use this version</button>
+											<button type="button" class="btn-ghost px-2.5 py-1 text-xs" (click)="discard(c)" [disabled]="reviewing()">Discard</button>
+										</div>
+									</div>
+								</div>
+							}
+						</section>
+					}
+
+					<section>
+						<div class="flex items-center justify-between">
+							<h3 class="text-sm font-semibold text-zinc-200">Image quality</h3>
+							<span class="text-xs" [class]="meme().lowRes ? 'text-amber-300' : 'text-zinc-500'">
+								{{ meme().width }}×{{ meme().height }}{{ meme().lowRes ? ' · low-res' : '' }}
+							</span>
+						</div>
+						@if (improveBusy()) {
+							<p class="mt-2 flex items-center gap-2 text-xs text-violet-200">
+								<span class="size-3 animate-spin rounded-full border-2 border-violet-900 border-t-violet-300"></span>
+								{{ meme().improveStatus === 'queued' ? 'Waiting…' : 'Looking for a better version…' }}
+							</p>
+						} @else {
+							<div class="mt-2 flex flex-wrap gap-2">
+								<button
+									type="button"
+									class="btn-secondary px-2.5 py-1.5 text-xs"
+									(click)="improve('web')"
+									[disabled]="!canSearch()"
+									[title]="canSearch() ? 'Search the internet for a bigger copy of this exact image' : 'Set up reverse image search in Settings first'"
+								>
+									🔎 Find better copy online
+								</button>
+								<button
+									type="button"
+									class="btn-secondary px-2.5 py-1.5 text-xs"
+									(click)="improve('enhance')"
+									[disabled]="meme().animated"
+									[title]="meme().animated ? 'Not available for animated GIFs' : 'Upscale 4x with AI, on this server'"
+								>
+									✨ AI enhance
+								</button>
+							</div>
+							@if (meme().improveStatus === 'error' && meme().improveError) {
+								<p class="mt-2 text-xs text-zinc-400">Last try: {{ meme().improveError }}</p>
+							}
+						}
+					</section>
+
 					<section>
 						<div class="flex items-center justify-between">
 							<h3 class="text-sm font-semibold text-zinc-200">Descriptions</h3>
@@ -107,6 +186,9 @@ export class MemeDetail {
 	readonly changed = output<Meme>();
 	readonly deleted = output<number>();
 	readonly generateRequested = output<number>();
+	readonly improveRequested = output<{ id: number; mode: ImproveMode }>();
+	/** Whether a reverse image search service is set up. */
+	readonly canSearch = input(false);
 	readonly closed = output<void>();
 
 	protected title = '';
@@ -117,6 +199,16 @@ export class MemeDetail {
 	protected readonly saving = signal(false);
 	protected readonly aiBusy = computed(() => ['queued', 'running'].includes(this.meme().aiStatus));
 	protected lineCount = () => this.lines().length;
+
+	protected readonly candidates = signal<Candidate[]>([]);
+	/** Which version the big image shows: null = current, else a candidate id. */
+	protected readonly viewing = signal<number | null>(null);
+	protected readonly reviewing = signal(false);
+	protected readonly improveBusy = computed(() => ['queued', 'running'].includes(this.meme().improveStatus));
+	protected readonly shownUrl = computed(() => {
+		const id = this.viewing();
+		return (id != null && this.candidates().find((c) => c.id === id)?.url) || this.meme().url;
+	});
 
 	constructor() {
 		// Refresh the fields when the meme changes (e.g. AI finished), unless the user is editing
@@ -129,6 +221,76 @@ export class MemeDetail {
 				this.tags.set([...m.tags]);
 			});
 		});
+
+		// (Re)load better versions when the meme or its count of them changes
+		effect(() => {
+			const { id, candidates } = this.meme();
+			untracked(() => this.loadCandidates(id, candidates));
+		});
+	}
+
+	private async loadCandidates(id: number, count: number) {
+		if (!count) {
+			this.candidates.set([]);
+			this.viewing.set(null);
+			return;
+		}
+		try {
+			const list = await this.api.candidates(id);
+			this.candidates.set(list);
+			// Show the newest suggestion straight away, for comparing
+			if (list.length && !list.some((c) => c.id === this.viewing())) this.viewing.set(list[0].id);
+		} catch (e) {
+			this.toasts.error(errorMessage(e));
+		}
+	}
+
+	improve(mode: ImproveMode) {
+		this.improveRequested.emit({ id: this.meme().id, mode });
+	}
+
+	/** Replacing the image only ever happens here, after the user confirms. */
+	async accept(c: Candidate) {
+		const m = this.meme();
+		const question = `Replace the current image (${m.width}×${m.height}) with this version (${c.width}×${c.height})? Descriptions and tags stay.`;
+		if (!confirm(question)) return;
+		this.reviewing.set(true);
+		try {
+			const updated = await this.api.acceptCandidate(m.id, c.id);
+			this.viewing.set(null);
+			this.changed.emit(updated);
+			this.toasts.show('Image replaced');
+		} catch (e) {
+			this.toasts.error(errorMessage(e));
+		} finally {
+			this.reviewing.set(false);
+		}
+	}
+
+	async discard(c: Candidate) {
+		this.reviewing.set(true);
+		try {
+			const updated = await this.api.discardCandidate(this.meme().id, c.id);
+			this.candidates.update((l) => l.filter((x) => x.id !== c.id));
+			if (this.viewing() === c.id) this.viewing.set(null);
+			this.changed.emit(updated);
+		} catch (e) {
+			this.toasts.error(errorMessage(e));
+		} finally {
+			this.reviewing.set(false);
+		}
+	}
+
+	size(bytes: number) {
+		return bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+	}
+
+	host(url: string | null) {
+		try {
+			return url ? new URL(url).hostname.replace(/^www\./, '') : '';
+		} catch {
+			return '';
+		}
 	}
 
 	private lines() {

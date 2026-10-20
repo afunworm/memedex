@@ -8,11 +8,14 @@ You know the meme you want: the dog raising its eyebrows, the slow clap, the "th
 
 - **Upload** JPG, PNG, WebP and GIF images: drag and drop, paste with Ctrl+V, or pick files. The same image is never stored twice.
 - **Many descriptions per image**, one per line, plus tags. A meme can be found by any one of its descriptions, so "wait, you did WHAT?" finds the eyebrow dog through "what did you just say", even though the two share no words.
-- **✨ AI describe:** Claude looks at an image (or a whole selection, or every new upload) and writes 8–15 description lines, tags, a title and any text on the image. Your own lines and tags are never removed.
+- **✨ AI describe:** Claude looks at an image (or a whole selection, or every new upload) and writes 25–35 description lines, tags, a title and any text on the image. Your own lines and tags are never removed.
 - **Find a reaction:** type what you want to say ("eye roll", "slow clap", "really?"). It's instant and free, with no AI call involved.
 - **Reply to a message:** paste the message you got, or a screenshot of it. Claude works out what a good reply would say, searches your library, and picks the best few with a reason for each.
 - **Describe a situation:** "my coworker presented my idea as his own in the meeting". Claude works out how it feels and what you'd say about it, then picks memes that capture it.
 - **Find duplicates:** finds images that are the same picture at another size, format or quality. Keep one (the largest is suggested), and the others' descriptions and tags are merged into it before they're deleted.
+- **Improve quality** for low-res images, two ways. Results always wait for your review: you compare **Current vs. New** side by side and choose **Use this version** or **Discard**. Nothing is replaced without your OK, and descriptions and tags always stay.
+  - **🔎 Find better copy online:** reverse image search (TinEye or SerpApi / Google Lens, with your own key) finds bigger copies. They're downloaded and only offered if they're truly the same picture (the same check the duplicate finder uses).
+  - **✨ AI enhance:** 4× upscaling with Real-ESRGAN, running locally on the server. It's free and offline, and good at blur and JPEG blockiness, but it can warp small text, so check before using.
 - **Copy image** puts the meme on your clipboard, ready to paste into any chat.
 - **Private libraries:** each person who signs in gets their own library and uses their own Claude API key, chosen in Settings.
 
@@ -24,6 +27,7 @@ You know the meme you want: the dog raising its eyebrows, the slow clap, the "th
 | Server | NestJS + SQLite (`server/`). It also serves the web app, so everything runs in one container. |
 | Sign-in | OIDC with PKCE in the browser. Register MemeDex as a **public** client; no client secret is used. |
 | AI | Claude, through each user's own API key. Keys are stored encrypted with `SETTINGS_ENCRYPTION_KEY` and never sent back to the browser. You can pick Opus 5.5, Sonnet 5.5 or Haiku 5.5. |
+| Upscaling | Real-ESRGAN General x4v3 (ONNX, ~5 MB), baked into the image and run on CPU in tiles. A typical meme takes a few seconds. |
 | Search | A small embedding model (`all-MiniLM-L6-v2`) runs inside the container, with no external API, plus SQLite full-text search. |
 
 **Why search works well:** every description line gets its own embedding, and an image's score is its *best* matching line. Averaging all of an image's lines would blur them together; this way one meme can be found by many different phrasings. Keyword matches (title, tags, descriptions, text on the image) and meaning matches are combined with reciprocal rank fusion.
@@ -46,7 +50,8 @@ docker compose up -d --build
 |---|---|
 | `OIDC_ISSUER` | Your OIDC provider, e.g. `https://oidc.example.com` (no trailing slash) |
 | `OIDC_CLIENT_ID` | The public client registered for MemeDex |
-| `SETTINGS_ENCRYPTION_KEY` | At least 32 characters (`openssl rand -base64 32`). Encrypts users' Claude API keys. |
+| `SETTINGS_ENCRYPTION_KEY` | At least 32 characters (`openssl rand -base64 32`). Encrypts users' Claude and image-search API keys. |
+| `PUBLIC_URL` | Optional. The address MemeDex is reached at from the internet, e.g. `https://memedex.example.com`. Only needed for SerpApi (Google fetches the image from MemeDex) when the proxy doesn't pass the host through. TinEye uploads the image instead, so it works either way. |
 
 ### OIDC setup
 

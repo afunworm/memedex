@@ -1,8 +1,9 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DbService } from '../db/db.service';
 import { ImageStore } from '../images/image-store.service';
 import { EmbeddingService, toBlob } from '../search/embedding.service';
 import { VectorIndex } from '../search/vector-index.service';
+import { LOW_RES } from '../config';
 
 export interface MemeRow {
 	id: number;
@@ -21,6 +22,8 @@ export interface MemeRow {
 	ai_status: string;
 	ai_error: string | null;
 	ai_at: string | null;
+	improve_status: string;
+	improve_error: string | null;
 	created_at: string;
 	updated_at: string;
 }
@@ -39,6 +42,13 @@ export interface MemeDto {
 	tags: string[];
 	aiStatus: 'none' | 'queued' | 'running' | 'done' | 'error';
 	aiError: string | null;
+	/** "Improve quality" job (web search / AI enhance). */
+	improveStatus: 'none' | 'queued' | 'running' | 'done' | 'error';
+	improveError: string | null;
+	/** Better versions waiting for the user to accept or discard. */
+	candidates: number;
+	/** Longer side below LOW_RES pixels. */
+	lowRes: boolean;
 	createdAt: string;
 	url: string;
 	thumbUrl: string;
@@ -57,8 +67,8 @@ export interface AiSuggestion {
 	ocrText: string;
 }
 
-const MAX_LINES = 60;
-const MAX_TAGS = 40;
+const MAX_LINES = 100;
+const MAX_TAGS = 60;
 
 export function cleanTag(t: string): string {
 	return t.trim().toLowerCase().replace(/^#/, '').replace(/\s+/g, ' ').slice(0, 40);
@@ -103,6 +113,14 @@ export class MemesService {
 			.prepare(`SELECT meme_id, tag FROM meme_tags WHERE meme_id IN (${ph}) ORDER BY tag`)
 			.all(...ids) as { meme_id: number; tag: string }[];
 
+		const counts = new Map(
+			(
+				this.db
+					.prepare(`SELECT meme_id, COUNT(*) n FROM meme_candidates WHERE meme_id IN (${ph}) GROUP BY meme_id`)
+					.all(...ids) as { meme_id: number; n: number }[]
+			).map((c) => [c.meme_id, c.n]),
+		);
+
 		const byId = new Map(rows.map((r) => [r.id, r]));
 		return ids
 			.filter((id) => byId.has(id))
@@ -122,6 +140,10 @@ export class MemesService {
 					tags: tags.filter((t) => t.meme_id === id).map((t) => t.tag),
 					aiStatus: r.ai_status as MemeDto['aiStatus'],
 					aiError: r.ai_error,
+					improveStatus: r.improve_status as MemeDto['improveStatus'],
+					improveError: r.improve_error,
+					candidates: counts.get(id) ?? 0,
+					lowRes: Math.max(r.width ?? 0, r.height ?? 0) < LOW_RES,
 					createdAt: r.created_at,
 					url: this.images.signedUrl(r.id, r.sha256, 'full'),
 					thumbUrl: this.images.signedUrl(r.id, r.sha256, 'thumb'),
@@ -130,7 +152,10 @@ export class MemesService {
 	}
 
 	/** Newest first, optionally only those with a tag or still lacking descriptions. */
-	list(sub: string, opts: { offset: number; limit: number; tag?: string; undescribed?: boolean }) {
+	list(
+		sub: string,
+		opts: { offset: number; limit: number; tag?: string; undescribed?: boolean; lowRes?: boolean; review?: boolean },
+	) {
 		const where = ['m.user_sub = ?'];
 		const args: unknown[] = [sub];
 		if (opts.tag) {
@@ -140,6 +165,11 @@ export class MemesService {
 		if (opts.undescribed) {
 			where.push('NOT EXISTS (SELECT 1 FROM meme_descriptions d WHERE d.meme_id = m.id)');
 		}
+		if (opts.lowRes) {
+			where.push('MAX(COALESCE(m.width, 0), COALESCE(m.height, 0)) < ?');
+			args.push(LOW_RES);
+		}
+		if (opts.review) where.push('EXISTS (SELECT 1 FROM meme_candidates c WHERE c.meme_id = m.id)');
 		const total = (this.db.prepare(`SELECT COUNT(*) n FROM memes m WHERE ${where.join(' AND ')}`).get(...args) as any).n;
 		const ids = (
 			this.db
@@ -306,6 +336,33 @@ export class MemesService {
 		return this.dtos(sub, [keepId])[0];
 	}
 
+	setImproveStatus(id: number, status: MemeDto['improveStatus'], error: string | null = null) {
+		this.db.prepare(`UPDATE memes SET improve_status = ?, improve_error = ? WHERE id = ?`).run(status, error, id);
+	}
+
+	/**
+	 * Swaps the image file for a better version the user accepted. Everything
+	 * written about the meme (descriptions, tags, title) stays.
+	 */
+	async replaceImage(sub: string, id: number, buf: Buffer): Promise<MemeDto> {
+		const old = this.row(sub, id);
+		const img = await this.images.save(sub, buf);
+		const clash = this.db
+			.prepare(`SELECT id FROM memes WHERE user_sub = ? AND sha256 = ? AND id != ?`)
+			.get(sub, img.sha256, id) as { id: number } | undefined;
+		if (clash) throw new ConflictException('That exact image is already in your library as another meme');
+		this.db
+			.prepare(
+				`UPDATE memes SET sha256 = ?, ext = ?, mime = ?, width = ?, height = ?, animated = ?, bytes = ?,
+				 phash = ?, sig = ?, improve_status = 'none', improve_error = NULL, updated_at = datetime('now') WHERE id = ?`,
+			)
+			.run(img.sha256, img.ext, img.mime, img.width, img.height, img.animated ? 1 : 0, img.bytes, img.phash, img.sig, id);
+		this.db.prepare(`DELETE FROM meme_candidates WHERE meme_id = ?`).run(id);
+		await this.images.removeCandidates(id);
+		if (old.sha256 !== img.sha256) await this.images.remove(sub, old.sha256, old.ext);
+		return this.dtos(sub, [id])[0];
+	}
+
 	setAiStatus(id: number, status: MemeDto['aiStatus'], error: string | null = null) {
 		this.db.prepare(`UPDATE memes SET ai_status = ?, ai_error = ? WHERE id = ?`).run(status, error, id);
 	}
@@ -319,6 +376,7 @@ export class MemesService {
 				this.db.prepare(`DELETE FROM memes_fts WHERE rowid = ?`).run(id);
 			})();
 			await this.images.remove(sub, r.sha256, r.ext);
+			await this.images.removeCandidates(id);
 		}
 		this.vectors.invalidate(sub);
 	}
