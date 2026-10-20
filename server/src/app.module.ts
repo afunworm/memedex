@@ -16,9 +16,11 @@ import { MemesController } from './memes/memes.controller';
 import { ClaudeService } from './ai/claude.service';
 import { AiQueueService } from './ai/ai-queue.service';
 import { EnvController } from './env.controller';
+import { DuplicatesService } from './duplicates/duplicates.service';
+import { DuplicatesController } from './duplicates/duplicates.controller';
 
 @Module({
-	controllers: [EnvController, SettingsController, ImagesController, MemesController, SearchController],
+	controllers: [EnvController, SettingsController, ImagesController, MemesController, SearchController, DuplicatesController],
 	providers: [
 		DbService,
 		AuthService,
@@ -30,6 +32,7 @@ import { EnvController } from './env.controller';
 		MemesService,
 		ClaudeService,
 		AiQueueService,
+		DuplicatesService,
 		{ provide: APP_GUARD, useClass: AuthGuard },
 	],
 })

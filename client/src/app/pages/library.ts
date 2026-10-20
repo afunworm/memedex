@@ -7,7 +7,7 @@ import { copyImage } from '../clipboard';
 import { Toasts } from '../toast';
 import { MemeDetail } from './meme-detail';
 
-type Mode = 'find' | 'respond';
+type Mode = 'find' | 'message' | 'situation';
 const PAGE = 60;
 
 @Component({
@@ -18,6 +18,12 @@ const PAGE = 60;
 export class LibraryPage implements OnInit, OnDestroy {
 	private readonly api = inject(Api);
 	private readonly toasts = inject(Toasts);
+
+	protected readonly tabs: { mode: Mode; label: string; short: string }[] = [
+		{ mode: 'find', label: 'Find a reaction', short: 'Find' },
+		{ mode: 'message', label: '✨ Reply to a message', short: '✨ Reply' },
+		{ mode: 'situation', label: '✨ Describe a situation', short: '✨ Situation' },
+	];
 
 	protected readonly me = signal<Me | null>(null);
 	protected readonly mode = signal<Mode>('find');
@@ -60,7 +66,7 @@ export class LibraryPage implements OnInit, OnDestroy {
 
 	/** What the grid shows right now. */
 	protected readonly grid = computed<Meme[]>(() => {
-		if (this.mode() === 'respond') {
+		if (this.asking()) {
 			const r = this.reply();
 			return r ? r.picks : [];
 		}
@@ -131,9 +137,19 @@ export class LibraryPage implements OnInit, OnDestroy {
 	// ── Find a reaction ──────────────────────────────────────
 
 	setMode(m: Mode) {
+		// Picks for a message don't answer a situation, and the other way round
+		if (m !== this.mode() && m !== 'find' && this.mode() !== 'find') this.reply.set(null);
 		this.mode.set(m);
 		this.selected.set(new Set());
 	}
+
+	/** Reply to a message / describe a situation: both ask Claude. */
+	protected readonly asking = computed(() => this.mode() !== 'find');
+	protected readonly askPlaceholder = computed(() =>
+		this.mode() === 'situation'
+			? "Describe what's going on, e.g. my coworker presented my idea as his own in the meeting…"
+			: 'Paste the message you got, or paste / drop a screenshot of it…',
+	);
 
 	onQuery() {
 		clearTimeout(this.searchTimer);
@@ -165,14 +181,15 @@ export class LibraryPage implements OnInit, OnDestroy {
 		this.runSearch();
 	}
 
-	// ── Respond to a message ─────────────────────────────────
+	// ── Reply to a message / describe a situation ────────────
 
 	async respond() {
-		if (!this.message.trim() && !this.shot()) return;
+		const kind = this.mode();
+		if (kind === 'find' || (!this.message.trim() && !this.shot())) return;
 		this.responding.set(true);
 		this.reply.set(null);
 		try {
-			const r = await this.api.respond(this.message.trim(), this.shot());
+			const r = await this.api.respond(kind, this.message.trim(), this.shot());
 			this.reply.set(r);
 			if (!r.picks.length && !r.more.length) this.toasts.show('Nothing in your library fits yet');
 		} catch (e) {
@@ -226,7 +243,7 @@ export class LibraryPage implements OnInit, OnDestroy {
 					await this.generate(r.created.map((m) => m.id), true);
 				}
 			}
-			if (this.searched() || this.mode() === 'respond' || this.tag() || this.undescribed()) {
+			if (this.searched() || this.asking() || this.tag() || this.undescribed()) {
 				this.toasts.show('Uploaded. Showing your library.');
 				this.mode.set('find');
 				this.query = '';
@@ -252,8 +269,8 @@ export class LibraryPage implements OnInit, OnDestroy {
 		const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/'));
 		if (!files.length || this.openId() != null) return;
 		e.preventDefault();
-		// In respond mode a pasted screenshot is the message; otherwise it's a new meme
-		if (this.mode() === 'respond') this.shot.set(files[0]);
+		// When asking Claude, a pasted screenshot goes with the question; otherwise it's a new meme
+		if (this.asking()) this.shot.set(files[0]);
 		else this.upload(files);
 	}
 
@@ -284,7 +301,7 @@ export class LibraryPage implements OnInit, OnDestroy {
 		this.dragDepth = 0;
 		this.dragging.set(false);
 		const files = [...e.dataTransfer.files];
-		if (this.mode() === 'respond') this.attachShot(e.dataTransfer.files);
+		if (this.asking()) this.attachShot(e.dataTransfer.files);
 		else this.upload(files);
 	}
 

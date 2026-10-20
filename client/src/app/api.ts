@@ -9,6 +9,7 @@ export interface Meme {
 	width: number | null;
 	height: number | null;
 	animated: boolean;
+	bytes: number;
 	originalName: string | null;
 	ocrText: string | null;
 	descriptions: { text: string; source: 'user' | 'ai' }[];
@@ -43,6 +44,15 @@ export interface RespondResult {
 	analysis: { summary: string; reactions: string[]; keywords: string[] };
 	picks: Meme[];
 	more: Meme[];
+}
+
+/** Reply to a message, or react to a described situation. */
+export type AskKind = 'message' | 'situation';
+
+export interface DuplicateGroup {
+	/** Suggested one to keep (the largest); listed first. */
+	keepId: number;
+	items: Meme[];
 }
 
 export interface UploadResult {
@@ -109,11 +119,24 @@ export class Api {
 		return firstValueFrom(this.http.get<{ items: Meme[] }>('/api/search', { params: { q } }));
 	}
 
-	respond(text: string, image: File | null) {
+	respond(kind: AskKind, text: string, image: File | null) {
 		const form = new FormData();
+		form.append('kind', kind);
 		form.append('text', text);
 		if (image) form.append('image', image, image.name || 'screenshot.png');
 		return firstValueFrom(this.http.post<RespondResult>('/api/respond', form));
+	}
+
+	duplicates() {
+		return firstValueFrom(this.http.get<DuplicateGroup[]>('/api/duplicates'));
+	}
+
+	mergeDuplicates(keepId: number, removeIds: number[]) {
+		return firstValueFrom(this.http.post<Meme>('/api/duplicates/merge', { keepId, removeIds }));
+	}
+
+	ignoreDuplicates(ids: number[]) {
+		return firstValueFrom(this.http.post('/api/duplicates/ignore', { ids }));
 	}
 
 	settings() {

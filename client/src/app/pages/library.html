@@ -2,22 +2,16 @@
 	<!-- The big search bar -->
 	<section class="mx-auto max-w-3xl pt-10 pb-6 sm:pt-14">
 		<div class="mx-auto mb-4 flex w-fit rounded-full border border-zinc-800 bg-zinc-900 p-1 text-sm">
-			<button
-				type="button"
-				class="rounded-full px-4 py-1.5 font-medium transition"
-				[class]="mode() === 'find' ? 'bg-amber-400 text-zinc-950' : 'text-zinc-400 hover:text-zinc-100'"
-				(click)="setMode('find')"
-			>
-				Find a reaction
-			</button>
-			<button
-				type="button"
-				class="rounded-full px-4 py-1.5 font-medium transition"
-				[class]="mode() === 'respond' ? 'bg-amber-400 text-zinc-950' : 'text-zinc-400 hover:text-zinc-100'"
-				(click)="setMode('respond')"
-			>
-				✨ Reply to a message
-			</button>
+			@for (t of tabs; track t.mode) {
+				<button
+					type="button"
+					class="whitespace-nowrap rounded-full px-3 py-1.5 font-medium transition sm:px-4"
+					[class]="mode() === t.mode ? 'bg-amber-400 text-zinc-950' : 'text-zinc-400 hover:text-zinc-100'"
+					(click)="setMode(t.mode)"
+				>
+					<span class="sm:hidden">{{ t.short }}</span><span class="hidden sm:inline">{{ t.label }}</span>
+				</button>
+			}
 		</div>
 
 		@if (mode() === 'find') {
@@ -45,7 +39,7 @@
 			<div class="rounded-2xl border border-zinc-700 bg-zinc-900 shadow-lg shadow-black/30 focus-within:border-amber-400 focus-within:ring-2 focus-within:ring-amber-400/40">
 				<textarea
 					class="block min-h-28 w-full resize-none bg-transparent px-5 pt-4 text-lg text-zinc-50 placeholder:text-zinc-500 focus:outline-none"
-					placeholder="Paste the message you got, or paste / drop a screenshot of it…"
+					[placeholder]="askPlaceholder()"
 					[(ngModel)]="message"
 					(keydown)="onMessageKey($event)"
 				></textarea>
@@ -58,18 +52,25 @@
 					}
 					<label class="btn-ghost cursor-pointer">
 						<input type="file" accept="image/*" class="hidden" (change)="attachShot($any($event.target).files); $any($event.target).value = ''" />
-						📎 Screenshot
+						📎 {{ mode() === 'situation' ? 'Image' : 'Screenshot' }}
 					</label>
 					<button type="button" class="btn-primary ml-auto" (click)="respond()" [disabled]="responding() || (!message.trim() && !shot())">
 						@if (responding()) {
 							<span class="size-4 animate-spin rounded-full border-2 border-zinc-900/30 border-t-zinc-900"></span> Thinking…
 						} @else {
-							Suggest replies
+							{{ mode() === 'situation' ? 'Suggest reactions' : 'Suggest replies' }}
 						}
 					</button>
 				</div>
 			</div>
-			<p class="mt-2 text-center text-xs text-zinc-500">Claude reads the message, works out what a good reply would say, and picks from your library. Ctrl+Enter to send.</p>
+			<p class="mt-2 text-center text-xs text-zinc-500">
+				@if (mode() === 'situation') {
+					Claude works out how the situation feels and what you'd say about it, and picks from your library.
+				} @else {
+					Claude reads the message, works out what a good reply would say, and picks from your library.
+				}
+				Ctrl+Enter to send.
+			</p>
 		}
 	</section>
 
@@ -82,10 +83,12 @@
 		}
 	}
 
-	<!-- Respond: what Claude understood -->
-	@if (mode() === 'respond' && reply(); as r) {
+	<!-- Asking Claude: what it understood -->
+	@if (asking() && reply(); as r) {
 		<section class="mb-6 rounded-2xl border border-zinc-800 bg-zinc-900/50 p-5">
-			<p class="text-sm text-zinc-300"><span class="font-semibold text-zinc-100">The message:</span> {{ r.analysis.summary }}</p>
+			<p class="text-sm text-zinc-300">
+				<span class="font-semibold text-zinc-100">{{ mode() === 'situation' ? 'The situation:' : 'The message:' }}</span> {{ r.analysis.summary }}
+			</p>
 			<div class="mt-3 flex flex-wrap gap-1.5">
 				@for (x of r.analysis.reactions; track x) {
 					<button type="button" class="chip hover:border-amber-400 hover:text-amber-200" title="Search for this" (click)="setMode('find'); query = x; runSearch()">{{ x }}</button>
@@ -97,7 +100,7 @@
 	<!-- Toolbar -->
 	<div class="mb-4 flex flex-wrap items-center gap-2">
 		<h2 class="mr-auto text-sm font-medium text-zinc-400">
-			@if (mode() === 'respond') {
+			@if (asking()) {
 				@if (reply()) { Claude's picks }
 			} @else if (searched()) {
 				{{ results().length }} result{{ results().length === 1 ? '' : 's' }} for "<span class="text-zinc-100">{{ searched() }}</span>"
@@ -117,6 +120,7 @@
 				Describing {{ busyCount() }}…
 			</span>
 		}
+		<a routerLink="/duplicates" class="btn-ghost" title="Find images that are the same picture at another size or format">Find duplicates</a>
 		@if (grid().length) {
 			<button type="button" class="btn-ghost" (click)="selecting() ? clearSelection() : selectAll()">{{ selecting() ? 'Clear selection' : 'Select all' }}</button>
 		}
@@ -224,7 +228,7 @@
 		</div>
 	}
 
-	@if (mode() === 'respond' && reply(); as r) {
+	@if (asking() && reply(); as r) {
 		@if (!r.picks.length) {
 			<p class="py-10 text-center text-zinc-500">Claude didn't find a great fit. {{ r.more.length ? 'Closest matches below.' : 'Add more memes (and descriptions) to your library.' }}</p>
 		}
@@ -274,7 +278,7 @@
 <!-- Drop overlay -->
 @if (dragging()) {
 	<div class="pointer-events-none fixed inset-3 z-50 grid place-items-center rounded-3xl border-4 border-dashed border-amber-400 bg-zinc-950/80">
-		<p class="font-display text-3xl font-bold text-amber-300">{{ mode() === 'respond' ? 'Drop the screenshot' : 'Drop to add to your MemeDex' }}</p>
+		<p class="font-display text-3xl font-bold text-amber-300">{{ asking() ? 'Drop the image' : 'Drop to add to your MemeDex' }}</p>
 	</div>
 }
 

@@ -60,6 +60,21 @@ const MIGRATIONS: string[] = [
 	-- Keyword index; rowid = memes.id. Rebuilt per meme by MemesService.reindex().
 	CREATE VIRTUAL TABLE memes_fts USING fts5(body, tokenize = 'porter unicode61');
 	`,
+	`
+	-- 128-bit difference hash (32 hex chars) of the first frame; near-identical
+	-- images (other resolution / format / compression) differ in only a few bits.
+	-- Filled in at upload, and at startup for older rows.
+	ALTER TABLE memes ADD COLUMN phash TEXT /* see DuplicatesService */;
+	-- 32x32 RGB of the first frame (3072 bytes): the close-up check for pairs the hash flags
+	ALTER TABLE memes ADD COLUMN sig BLOB /* see DuplicatesService */;
+
+	-- Pairs the user marked "not duplicates", so they aren't suggested again (a < b).
+	CREATE TABLE duplicate_ignores (
+		a INTEGER NOT NULL REFERENCES memes(id) ON DELETE CASCADE,
+		b INTEGER NOT NULL REFERENCES memes(id) ON DELETE CASCADE,
+		PRIMARY KEY (a, b)
+	);
+	`,
 ];
 
 @Injectable()

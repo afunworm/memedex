@@ -16,5 +16,11 @@ export const routes: Routes = [
 		loadComponent: () => import('./pages/settings').then((m) => m.SettingsPage),
 		title: 'Settings · MemeDex',
 	},
+	{
+		path: 'duplicates',
+		canActivate: [authGuard],
+		loadComponent: () => import('./pages/duplicates').then((m) => m.DuplicatesPage),
+		title: 'Duplicates · MemeDex',
+	},
 	{ path: '**', redirectTo: '' },
 ];

@@ -11,6 +11,8 @@ You know the meme you want: the dog raising its eyebrows, the slow clap, the "th
 - **✨ AI describe:** Claude looks at an image (or a whole selection, or every new upload) and writes 8–15 description lines, tags, a title and any text on the image. Your own lines and tags are never removed.
 - **Find a reaction:** type what you want to say ("eye roll", "slow clap", "really?"). It's instant and free, with no AI call involved.
 - **Reply to a message:** paste the message you got, or a screenshot of it. Claude works out what a good reply would say, searches your library, and picks the best few with a reason for each.
+- **Describe a situation:** "my coworker presented my idea as his own in the meeting". Claude works out how it feels and what you'd say about it, then picks memes that capture it.
+- **Find duplicates:** finds images that are the same picture at another size, format or quality. Keep one (the largest is suggested), and the others' descriptions and tags are merged into it before they're deleted.
 - **Copy image** puts the meme on your clipboard, ready to paste into any chat.
 - **Private libraries:** each person who signs in gets their own library and uses their own Claude API key, chosen in Settings.
 
@@ -26,10 +28,12 @@ You know the meme you want: the dog raising its eyebrows, the slow clap, the "th
 
 **Why search works well:** every description line gets its own embedding, and an image's score is its *best* matching line. Averaging all of an image's lines would blur them together; this way one meme can be found by many different phrasings. Keyword matches (title, tags, descriptions, text on the image) and meaning matches are combined with reciprocal rank fusion.
 
-**Reply to a message** takes three steps:
-1. Claude reads the message and writes 6–10 things a reply could express.
+**Reply to a message** and **Describe a situation** take three steps:
+1. Claude reads the message or situation and writes 6–10 things the meme could express.
 2. Those phrases are searched.
 3. Claude looks at the top 16 results (thumbnails and descriptions) and picks the best ones.
+
+**Duplicates** are found in two stages. A 128-bit perceptual hash of each image (light/dark edges on a 9×9 grid) quickly rules out most pairs. The remaining pairs are compared as 32×32 colour thumbnails, pixel by pixel. Resizing and re-compressing barely change those thumbnails, but a different caption or colour does. Identical files are refused at upload.
 
 ## Deploy
 

@@ -46,6 +46,17 @@ Return:
 
 If the input is a screenshot of a conversation, reply to the most recent message from the other person.`;
 
+const SITUATION_SYSTEM = `Someone describes a situation they're in, or something that happened, and wants a reaction meme or reaction image that fits it: to post, to send to a friend, or just to capture how it feels. Work out what a fitting reaction would express.
+
+Return:
+- summary: one sentence on the situation and the feelings it brings up.
+- reactions: 6-10 short lines a person might say or feel in that situation, written the way a person would say it ("I'm fine. Everything is fine.", "why is this happening to me", "nailed it", "of course this happened"). Cover several angles: how they feel, what they'd say to the people involved, what an onlooker would think; funny and sincere, as fits.
+- keywords: 3-8 single words useful for a keyword search (emotions, topics).
+
+If an image is attached, it shows part of the situation.`;
+
+export type AskKind = 'message' | 'situation';
+
 const ANALYZE_SCHEMA = {
 	type: 'object',
 	properties: {
@@ -57,7 +68,7 @@ const ANALYZE_SCHEMA = {
 	additionalProperties: false,
 };
 
-const PICK_SYSTEM = `You pick reaction images to reply to a message. You get the message, and numbered candidate images from the user's own collection, each with its descriptions. Choose up to 6 candidates that would make a good reply, best first, and give each a short reason (under 15 words) saying what the reply would convey. Only choose candidates that genuinely fit; it is fine to choose fewer, or none.`;
+const PICK_SYSTEM = `You pick reaction images. You get either a message someone received (pick images that make a good reply to it) or a situation someone described (pick images that capture a fitting reaction to it), plus numbered candidate images from the user's own collection, each with its descriptions. Choose up to 6 candidates that fit, best first, and give each a short reason (under 15 words) saying what sending it would convey. Only choose candidates that genuinely fit; it is fine to choose fewer, or none.`;
 
 const PICK_SCHEMA = {
 	type: 'object',
@@ -164,25 +175,31 @@ export class ClaudeService {
 		return { title: out.title, ocrText: out.ocr_text, descriptions: out.descriptions ?? [], tags: out.tags ?? [] };
 	}
 
-	async analyzeMessage(sub: string, text: string, image: ImageInput | null): Promise<MessageAnalysis> {
+	/** What a reply (to a message) or a reaction (to a situation) should express. */
+	async analyze(sub: string, kind: AskKind, text: string, image: ImageInput | null): Promise<MessageAnalysis> {
 		const content: Anthropic.Beta.BetaContentBlockParam[] = [];
 		if (image) content.push({ type: 'image', source: { type: 'base64', media_type: image.mediaType, data: image.data } });
 		content.push({
 			type: 'text',
-			text: text ? `<message>\n${text}\n</message>` : 'The message is in the screenshot above.',
+			text: text ? `<${kind}>\n${text}\n</${kind}>` : `The ${kind} is in the image above.`,
 		});
-		return this.ask<MessageAnalysis>(sub, { system: ANALYZE_SYSTEM, effort: 'low', schema: ANALYZE_SCHEMA, content });
+		return this.ask<MessageAnalysis>(sub, {
+			system: kind === 'situation' ? SITUATION_SYSTEM : ANALYZE_SYSTEM,
+			effort: 'low',
+			schema: ANALYZE_SCHEMA,
+			content,
+		});
 	}
 
 	async pick(
 		sub: string,
-		message: { text: string; summary: string },
+		ask: { kind: AskKind; text: string; summary: string },
 		candidates: PickCandidate[],
 	): Promise<{ id: number; reason: string }[]> {
 		const content: Anthropic.Beta.BetaContentBlockParam[] = [
 			{
 				type: 'text',
-				text: `<message>\n${message.text || '(screenshot)'}\n</message>\nWhat it says: ${message.summary}\n\nCandidates:`,
+				text: `<${ask.kind}>\n${ask.text || '(see image)'}\n</${ask.kind}>\nIn short: ${ask.summary}\n\nCandidates:`,
 			},
 		];
 		candidates.forEach((c, i) => {

@@ -15,6 +15,7 @@ export interface MemeRow {
 	animated: number;
 	bytes: number;
 	original_name: string | null;
+	phash: string | null;
 	title: string | null;
 	ocr_text: string | null;
 	ai_status: string;
@@ -31,6 +32,7 @@ export interface MemeDto {
 	width: number | null;
 	height: number | null;
 	animated: boolean;
+	bytes: number;
 	originalName: string | null;
 	ocrText: string | null;
 	descriptions: { text: string; source: 'user' | 'ai' }[];
@@ -113,6 +115,7 @@ export class MemesService {
 					width: r.width,
 					height: r.height,
 					animated: !!r.animated,
+					bytes: r.bytes,
 					originalName: r.original_name,
 					ocrText: r.ocr_text,
 					descriptions: descs.filter((d) => d.meme_id === id).map((d) => ({ text: d.text, source: d.source })),
@@ -171,10 +174,10 @@ export class MemesService {
 				}
 				const r = this.db
 					.prepare(
-						`INSERT INTO memes (user_sub, sha256, ext, mime, width, height, animated, bytes, original_name)
-						 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+						`INSERT INTO memes (user_sub, sha256, ext, mime, width, height, animated, bytes, original_name, phash, sig)
+						 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 					)
-					.run(sub, img.sha256, img.ext, img.mime, img.width, img.height, img.animated ? 1 : 0, img.bytes, f.originalname || null);
+					.run(sub, img.sha256, img.ext, img.mime, img.width, img.height, img.animated ? 1 : 0, img.bytes, f.originalname || null, img.phash, img.sig);
 				const id = Number(r.lastInsertRowid);
 				this.reindex(id);
 				created.push(id);
@@ -260,6 +263,47 @@ export class MemesService {
 		});
 		tx();
 		await this.afterChange(sub, id);
+	}
+
+	/**
+	 * Cleaning up duplicates: moves the other copies' descriptions (with their
+	 * vectors), tags, title and image text onto the one being kept, then
+	 * deletes the copies.
+	 */
+	async mergeInto(sub: string, keepId: number, removeIds: number[]) {
+		const keep = this.row(sub, keepId);
+		removeIds = [...new Set(removeIds)].filter((id) => id !== keepId);
+		const others = removeIds.map((id) => this.row(sub, id));
+		this.db.transaction(() => {
+			const existing = this.db
+				.prepare(`SELECT text FROM meme_descriptions WHERE meme_id = ?`)
+				.all(keepId) as { text: string }[];
+			const have = new Set(existing.map((e) => e.text.toLowerCase()));
+			let pos = existing.length;
+			const descs = this.db.prepare(
+				`SELECT text, source, embedding FROM meme_descriptions WHERE meme_id = ? ORDER BY position, id`,
+			);
+			const ins = this.db.prepare(
+				`INSERT INTO meme_descriptions (meme_id, text, source, position, embedding) VALUES (?, ?, ?, ?, ?)`,
+			);
+			const tagIns = this.db.prepare(`INSERT OR IGNORE INTO meme_tags (meme_id, tag) SELECT ?, tag FROM meme_tags WHERE meme_id = ?`);
+			for (const o of others) {
+				for (const d of descs.all(o.id) as { text: string; source: string; embedding: Buffer | null }[]) {
+					if (have.has(d.text.toLowerCase()) || pos >= MAX_LINES) continue;
+					have.add(d.text.toLowerCase());
+					ins.run(keepId, d.text, d.source, pos++, d.embedding);
+				}
+				tagIns.run(keepId, o.id);
+			}
+			const title = keep.title ?? others.find((o) => o.title)?.title ?? null;
+			const ocr = keep.ocr_text ?? others.find((o) => o.ocr_text)?.ocr_text ?? null;
+			this.db
+				.prepare(`UPDATE memes SET title = ?, ocr_text = ?, updated_at = datetime('now') WHERE id = ?`)
+				.run(title, ocr, keepId);
+		})();
+		await this.remove(sub, removeIds);
+		await this.afterChange(sub, keepId);
+		return this.dtos(sub, [keepId])[0];
 	}
 
 	setAiStatus(id: number, status: MemeDto['aiStatus'], error: string | null = null) {

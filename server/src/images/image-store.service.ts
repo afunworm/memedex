@@ -22,6 +22,8 @@ export interface StoredImage {
 	height: number | null;
 	animated: boolean;
 	bytes: number;
+	phash: string;
+	sig: Buffer;
 }
 
 export type ImageKind = 'full' | 'thumb';
@@ -86,7 +88,42 @@ export class ImageStore {
 			height: meta.pageHeight ?? meta.height ?? null,
 			animated,
 			bytes: buf.length,
+			phash: await this.phash(buf),
+			sig: await this.signature(buf),
 		};
+	}
+
+	/**
+	 * Perceptual fingerprint for finding near-duplicates: the first frame is
+	 * shrunk to 9x9 greyscale, and each bit says whether a pixel is darker than
+	 * its right neighbour (64 bits) or the one below (64 bits). Resizing,
+	 * re-encoding or format changes flip at most a few of the 128 bits.
+	 */
+	/** 32x32 RGB thumbnail of the first frame, stretched to a square: compared pixel by pixel. */
+	signature(input: Buffer | string): Promise<Buffer> {
+		return sharp(input, { animated: false })
+			.rotate()
+			.flatten({ background: '#ffffff' })
+			.resize(32, 32, { fit: 'fill', kernel: 'lanczos3' })
+			.removeAlpha()
+			.raw()
+			.toBuffer();
+	}
+
+	async phash(input: Buffer | string): Promise<string> {
+		const px = await sharp(input, { animated: false })
+			.rotate()
+			.flatten({ background: '#ffffff' })
+			.greyscale()
+			.resize(9, 9, { fit: 'fill', kernel: 'lanczos3' })
+			.raw()
+			.toBuffer();
+		const bits: number[] = [];
+		for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) bits.push(px[r * 9 + c] < px[r * 9 + c + 1] ? 1 : 0);
+		for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) bits.push(px[r * 9 + c] < px[(r + 1) * 9 + c] ? 1 : 0);
+		let hex = '';
+		for (let i = 0; i < 128; i += 4) hex += ((bits[i] << 3) | (bits[i + 1] << 2) | (bits[i + 2] << 1) | bits[i + 3]).toString(16);
+		return hex;
 	}
 
 	async remove(sub: string, sha: string, ext: string) {
