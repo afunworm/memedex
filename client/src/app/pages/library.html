@@ -1,0 +1,289 @@
+<main class="mx-auto max-w-7xl px-4 pb-32">
+	<!-- The big search bar -->
+	<section class="mx-auto max-w-3xl pt-10 pb-6 sm:pt-14">
+		<div class="mx-auto mb-4 flex w-fit rounded-full border border-zinc-800 bg-zinc-900 p-1 text-sm">
+			<button
+				type="button"
+				class="rounded-full px-4 py-1.5 font-medium transition"
+				[class]="mode() === 'find' ? 'bg-amber-400 text-zinc-950' : 'text-zinc-400 hover:text-zinc-100'"
+				(click)="setMode('find')"
+			>
+				Find a reaction
+			</button>
+			<button
+				type="button"
+				class="rounded-full px-4 py-1.5 font-medium transition"
+				[class]="mode() === 'respond' ? 'bg-amber-400 text-zinc-950' : 'text-zinc-400 hover:text-zinc-100'"
+				(click)="setMode('respond')"
+			>
+				✨ Reply to a message
+			</button>
+		</div>
+
+		@if (mode() === 'find') {
+			<div class="relative">
+				<svg class="pointer-events-none absolute left-5 top-1/2 size-6 -translate-y-1/2 text-zinc-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" stroke-linecap="round" />
+				</svg>
+				<input
+					type="text"
+					enterkeyhint="search"
+					aria-label="Search your memes"
+					class="w-full rounded-2xl border border-zinc-700 bg-zinc-900 py-5 pl-14 pr-14 text-xl text-zinc-50 shadow-lg shadow-black/30 placeholder:text-zinc-500 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400/40"
+					placeholder="eye roll, slow clap, really?…"
+					autofocus
+					[(ngModel)]="query"
+					(ngModelChange)="onQuery()"
+					(keydown.enter)="runSearch()"
+					(keydown.escape)="clearSearch()"
+				/>
+				@if (query) {
+					<button type="button" class="absolute right-4 top-1/2 -translate-y-1/2 rounded-full px-2 text-2xl leading-none text-zinc-500 hover:text-zinc-100" (click)="clearSearch()" aria-label="Clear">×</button>
+				}
+			</div>
+		} @else {
+			<div class="rounded-2xl border border-zinc-700 bg-zinc-900 shadow-lg shadow-black/30 focus-within:border-amber-400 focus-within:ring-2 focus-within:ring-amber-400/40">
+				<textarea
+					class="block min-h-28 w-full resize-none bg-transparent px-5 pt-4 text-lg text-zinc-50 placeholder:text-zinc-500 focus:outline-none"
+					placeholder="Paste the message you got, or paste / drop a screenshot of it…"
+					[(ngModel)]="message"
+					(keydown)="onMessageKey($event)"
+				></textarea>
+				<div class="flex items-center gap-3 px-3 pb-3">
+					@if (shotUrl(); as url) {
+						<div class="relative">
+							<img [src]="url" alt="Screenshot" class="h-14 rounded-md border border-zinc-700 object-cover" />
+							<button type="button" class="absolute -right-2 -top-2 grid size-5 place-items-center rounded-full bg-zinc-700 text-xs text-white hover:bg-zinc-500" (click)="clearShot()" aria-label="Remove screenshot">×</button>
+						</div>
+					}
+					<label class="btn-ghost cursor-pointer">
+						<input type="file" accept="image/*" class="hidden" (change)="attachShot($any($event.target).files); $any($event.target).value = ''" />
+						📎 Screenshot
+					</label>
+					<button type="button" class="btn-primary ml-auto" (click)="respond()" [disabled]="responding() || (!message.trim() && !shot())">
+						@if (responding()) {
+							<span class="size-4 animate-spin rounded-full border-2 border-zinc-900/30 border-t-zinc-900"></span> Thinking…
+						} @else {
+							Suggest replies
+						}
+					</button>
+				</div>
+			</div>
+			<p class="mt-2 text-center text-xs text-zinc-500">Claude reads the message, works out what a good reply would say, and picks from your library. Ctrl+Enter to send.</p>
+		}
+	</section>
+
+	@if (me(); as m) {
+		@if (!m.hasApiKey) {
+			<div class="mx-auto mb-6 flex max-w-3xl items-center gap-3 rounded-xl border border-amber-900/60 bg-amber-950/30 px-4 py-3 text-sm text-amber-100">
+				<span>Add your Claude API key to auto-describe images and get reply suggestions. Search works without it.</span>
+				<a routerLink="/settings" class="btn-secondary ml-auto shrink-0">Settings</a>
+			</div>
+		}
+	}
+
+	<!-- Respond: what Claude understood -->
+	@if (mode() === 'respond' && reply(); as r) {
+		<section class="mb-6 rounded-2xl border border-zinc-800 bg-zinc-900/50 p-5">
+			<p class="text-sm text-zinc-300"><span class="font-semibold text-zinc-100">The message:</span> {{ r.analysis.summary }}</p>
+			<div class="mt-3 flex flex-wrap gap-1.5">
+				@for (x of r.analysis.reactions; track x) {
+					<button type="button" class="chip hover:border-amber-400 hover:text-amber-200" title="Search for this" (click)="setMode('find'); query = x; runSearch()">{{ x }}</button>
+				}
+			</div>
+		</section>
+	}
+
+	<!-- Toolbar -->
+	<div class="mb-4 flex flex-wrap items-center gap-2">
+		<h2 class="mr-auto text-sm font-medium text-zinc-400">
+			@if (mode() === 'respond') {
+				@if (reply()) { Claude's picks }
+			} @else if (searched()) {
+				{{ results().length }} result{{ results().length === 1 ? '' : 's' }} for "<span class="text-zinc-100">{{ searched() }}</span>"
+			} @else {
+				Your library · <span class="text-zinc-100">{{ total() }}</span>
+			}
+		</h2>
+		@if (uploading()) {
+			<span class="chip border-amber-800 text-amber-200">
+				<span class="size-3 animate-spin rounded-full border-2 border-amber-900 border-t-amber-300"></span>
+				Uploading {{ uploading() }}…
+			</span>
+		}
+		@if (busyCount()) {
+			<span class="chip border-violet-800 text-violet-200">
+				<span class="size-3 animate-spin rounded-full border-2 border-violet-900 border-t-violet-300"></span>
+				Describing {{ busyCount() }}…
+			</span>
+		}
+		@if (grid().length) {
+			<button type="button" class="btn-ghost" (click)="selecting() ? clearSelection() : selectAll()">{{ selecting() ? 'Clear selection' : 'Select all' }}</button>
+		}
+		<label class="btn-primary cursor-pointer">
+			<input #file type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple class="hidden" (change)="pick(file)" />
+			<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14" stroke-linecap="round" /></svg>
+			Upload
+		</label>
+	</div>
+
+	@if (mode() === 'find' && !searched() && (tags().length || undescribed())) {
+		<div class="-mx-4 mb-5 flex gap-1.5 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
+			<button
+				type="button"
+				class="chip shrink-0"
+				[class]="undescribed() ? '!border-amber-400 !text-amber-200' : 'hover:border-zinc-500'"
+				(click)="toggleUndescribed()"
+			>
+				Needs descriptions
+			</button>
+			@for (t of tags(); track t.tag) {
+				<button type="button" class="chip shrink-0" [class]="tag() === t.tag ? '!border-amber-400 !text-amber-200' : 'hover:border-zinc-500'" (click)="setTag(t.tag)">
+					{{ t.tag }} <span class="text-zinc-500">{{ t.count }}</span>
+				</button>
+			}
+		</div>
+	}
+
+	<!-- Grid -->
+	<ng-template #card let-m>
+		<div
+			class="group relative mb-3 cursor-pointer break-inside-avoid overflow-hidden rounded-xl border bg-zinc-900 transition"
+			[class]="selected().has(m.id) ? 'border-amber-400 ring-2 ring-amber-400' : 'border-zinc-800 hover:border-zinc-600'"
+			(click)="open(m)"
+			(keydown.enter)="open(m)"
+			tabindex="0"
+		>
+			<img
+				[src]="m.thumbUrl"
+				[alt]="m.title ?? ''"
+				loading="lazy"
+				class="block w-full bg-zinc-800"
+				[style.aspect-ratio]="m.width && m.height ? m.width + ' / ' + m.height : null"
+			/>
+
+			<!-- Select -->
+			<button
+				type="button"
+				class="absolute left-2 top-2 grid size-6 place-items-center rounded-md border text-xs font-bold transition"
+				[class]="selected().has(m.id) ? 'border-amber-400 bg-amber-400 text-zinc-950 opacity-100' : 'border-white/60 bg-black/40 text-transparent opacity-0 group-hover:opacity-100 ' + (selecting() ? '!opacity-100' : '')"
+				(click)="toggle(m.id, $event)"
+				aria-label="Select"
+			>
+				✓
+			</button>
+
+			<!-- Quick copy -->
+			<button
+				type="button"
+				class="absolute right-2 top-2 rounded-md bg-black/60 px-2 py-1 text-xs font-medium text-white opacity-0 backdrop-blur transition hover:bg-amber-400 hover:text-zinc-950 group-hover:opacity-100"
+				(click)="quickCopy(m, $event)"
+			>
+				Copy
+			</button>
+
+			<!-- AI working -->
+			@if (m.aiStatus === 'queued' || m.aiStatus === 'running') {
+				<div class="absolute inset-x-0 bottom-0 flex items-center gap-2 bg-gradient-to-t from-black/80 px-3 pb-2 pt-6 text-xs text-violet-200">
+					<span class="size-3 animate-spin rounded-full border-2 border-violet-900 border-t-violet-300"></span>
+					{{ m.aiStatus === 'queued' ? 'Waiting…' : 'Describing…' }}
+				</div>
+			}
+
+			@let failed = m.aiStatus === 'error';
+			@let bare = !m.descriptions.length && m.aiStatus !== 'queued' && m.aiStatus !== 'running';
+			@if (m.reason || m.matched || m.title || failed || bare) {
+				<div class="border-t border-zinc-800 px-3 py-2 text-xs">
+					@if (m.title || failed || bare) {
+						<div class="flex items-center gap-2">
+							@if (m.title) {
+								<span class="min-w-0 truncate font-medium text-zinc-200">{{ m.title }}</span>
+							}
+							@if (failed) {
+								<span class="ml-auto shrink-0 rounded bg-red-600/90 px-1.5 py-px text-[10px] font-medium text-white" [title]="m.aiError">AI failed</span>
+							} @else if (bare) {
+								<span class="shrink-0 text-zinc-500" [class.ml-auto]="m.title">No descriptions</span>
+							}
+						</div>
+					}
+					@if (m.reason) {
+						<div class="mt-0.5 text-amber-200/90">{{ m.reason }}</div>
+					} @else if (m.matched) {
+						<div class="mt-0.5 truncate text-zinc-500">“{{ m.matched }}”</div>
+					}
+				</div>
+			}
+		</div>
+	</ng-template>
+
+	@if (grid().length) {
+		<div class="columns-2 gap-3 sm:columns-3 lg:columns-4 xl:columns-5">
+			@for (m of grid(); track m.id) {
+				<ng-container *ngTemplateOutlet="card; context: { $implicit: m }" />
+			}
+		</div>
+	}
+
+	@if (mode() === 'respond' && reply(); as r) {
+		@if (!r.picks.length) {
+			<p class="py-10 text-center text-zinc-500">Claude didn't find a great fit. {{ r.more.length ? 'Closest matches below.' : 'Add more memes (and descriptions) to your library.' }}</p>
+		}
+		@if (r.more.length) {
+			<h2 class="mb-4 mt-10 text-sm font-medium text-zinc-400">Other matches</h2>
+			<div class="columns-2 gap-3 sm:columns-3 lg:columns-4 xl:columns-5">
+				@for (m of r.more; track m.id) {
+					<ng-container *ngTemplateOutlet="card; context: { $implicit: m }" />
+				}
+			</div>
+		}
+	}
+
+	<!-- Empty states / paging -->
+	@if (mode() === 'find') {
+		@if (searched() && !results().length) {
+			<p class="py-16 text-center text-zinc-500">Nothing matches "{{ searched() }}". Try other words, or ✨ AI describe more of your images.</p>
+		} @else if (!searched() && !loading() && !items().length) {
+			@if (tag() || undescribed()) {
+				<p class="py-16 text-center text-zinc-500">Nothing here.</p>
+			} @else {
+				<label class="mt-4 flex cursor-pointer flex-col items-center rounded-3xl border-2 border-dashed border-zinc-800 px-6 py-20 text-center transition hover:border-amber-400/60">
+					<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple class="hidden" (change)="pick($any($event.target))" />
+					<span class="text-5xl">🖼️</span>
+					<span class="mt-4 font-display text-2xl font-bold">Start your MemeDex</span>
+					<span class="mt-2 max-w-md text-sm text-zinc-400">Drop images anywhere on this page, paste one with Ctrl+V, or click to choose files. JPG, PNG, WebP and GIF.</span>
+				</label>
+			}
+		} @else if (!searched() && items().length < total()) {
+			<div class="mt-6 text-center">
+				<button type="button" class="btn-secondary" (click)="load(true)" [disabled]="loading()">{{ loading() ? 'Loading…' : 'Load more' }}</button>
+			</div>
+		}
+	}
+</main>
+
+<!-- Bulk actions -->
+@if (selecting()) {
+	<div class="fixed inset-x-0 bottom-4 z-30 mx-auto flex w-fit items-center gap-2 rounded-2xl border border-zinc-700 bg-zinc-900/95 p-2 pl-4 shadow-2xl shadow-black/60 backdrop-blur">
+		<span class="mr-2 text-sm font-medium">{{ selected().size }} selected</span>
+		<button type="button" class="btn-primary" (click)="generate([...selected()])">✨ AI describe</button>
+		<button type="button" class="btn-danger" (click)="removeSelected()">Delete</button>
+		<button type="button" class="btn-ghost" (click)="clearSelection()">Cancel</button>
+	</div>
+}
+
+<!-- Drop overlay -->
+@if (dragging()) {
+	<div class="pointer-events-none fixed inset-3 z-50 grid place-items-center rounded-3xl border-4 border-dashed border-amber-400 bg-zinc-950/80">
+		<p class="font-display text-3xl font-bold text-amber-300">{{ mode() === 'respond' ? 'Drop the screenshot' : 'Drop to add to your MemeDex' }}</p>
+	</div>
+}
+
+@if (openMeme(); as m) {
+	<app-meme-detail
+		[meme]="m"
+		(closed)="openId.set(null)"
+		(changed)="onChanged($event)"
+		(deleted)="onDeleted($event)"
+		(generateRequested)="generate([$event])"
+	/>
+}

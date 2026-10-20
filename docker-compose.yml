@@ -1,0 +1,26 @@
+volumes:
+ memedex_data:
+
+networks:
+ dokploy-network:
+  external: true
+
+services:
+ memedex:
+  build:
+   context: .
+   target: runtime
+  image: memedex
+  restart: unless-stopped
+  networks:
+   - dokploy-network
+  volumes:
+   # SQLite database, uploaded images and thumbnails
+   - memedex_data:/app/data
+  environment:
+   # OIDC provider, e.g. https://oidc.example.com (no trailing slash)
+   - OIDC_ISSUER
+   # Client ID of a public (PKCE) client; no secret is used
+   - OIDC_CLIENT_ID
+   # Encrypts each user's Claude API key at rest (at least 32 characters)
+   - SETTINGS_ENCRYPTION_KEY

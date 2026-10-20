@@ -1,0 +1,16 @@
+{
+	"useTabs": true,
+	"tabWidth": 1,
+	"printWidth": 100,
+	"singleQuote": true,
+	"trailingComma": "all",
+	"yamlBracketSpacing": false,
+	"proseWrap": "preserve",
+
+	"overrides": [
+		{
+			"files": "client/**/*.html",
+			"options": { "parser": "angular" }
+		}
+	]
+}
