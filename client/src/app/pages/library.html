@@ -324,7 +324,12 @@
 @if (openMeme(); as m) {
 	<app-meme-detail
 		[meme]="m"
-		(closed)="openId.set(null)"
+		(closed)="closeDetail()"
+		(navigate)="navigate($event)"
+		(openOther)="openFromSimilar($event)"
+		[hasPrev]="hasPrev()"
+		[hasNext]="hasNext()"
+		[position]="position()"
 		(changed)="onChanged($event)"
 		(deleted)="onDeleted($event)"
 		(generateRequested)="generate([$event])"

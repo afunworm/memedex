@@ -77,12 +77,31 @@ export class LibraryPage implements OnInit, OnDestroy {
 		return this.searched() ? this.results() : this.items();
 	});
 
+	/** Set when an image was opened from "More like this": next / previous move through that list. */
+	protected readonly navOverride = signal<Meme[] | null>(null);
+
 	protected readonly openMeme = computed(() => {
 		const id = this.openId();
 		if (id == null) return null;
 		const r = this.reply();
-		const all = [...this.items(), ...this.results(), ...(r ? [...r.picks, ...r.more] : [])];
+		const all = [...(this.navOverride() ?? []), ...this.items(), ...this.results(), ...(r ? [...r.picks, ...r.more] : [])];
 		return all.find((m) => m.id === id) ?? null;
+	});
+
+	/** The list the open image belongs to, for next / previous. */
+	private readonly navList = computed<Meme[]>(() => {
+		const id = this.openId();
+		const lists = [this.navOverride() ?? [], this.grid(), this.reply()?.more ?? []];
+		return lists.find((l) => l.some((m) => m.id === id)) ?? [];
+	});
+	private readonly navIndex = computed(() => this.navList().findIndex((m) => m.id === this.openId()));
+	/** More library pages can be loaded past the end of the list. */
+	private readonly navMore = computed(() => this.navList() === this.items() && this.items().length < this.total());
+	protected readonly hasPrev = computed(() => this.navIndex() > 0);
+	protected readonly hasNext = computed(() => this.navIndex() >= 0 && (this.navIndex() < this.navList().length - 1 || this.navMore()));
+	protected readonly position = computed(() => {
+		const i = this.navIndex();
+		return i < 0 ? null : `${i + 1} / ${this.navMore() ? this.total() : this.navList().length}`;
 	});
 
 	protected readonly selecting = computed(() => this.selected().size > 0);
@@ -408,6 +427,7 @@ export class LibraryPage implements OnInit, OnDestroy {
 		this.items.update(swap);
 		this.results.update(swap);
 		this.reply.update((r) => (r ? { ...r, picks: swap(r.picks), more: swap(r.more) } : r));
+		this.navOverride.update((l) => (l ? swap(l) : l));
 	}
 
 	/** Sets some fields on these memes in every list on the page. */
@@ -427,13 +447,34 @@ export class LibraryPage implements OnInit, OnDestroy {
 		this.total.update((t) => Math.max(0, t - ids.length));
 	}
 
+	async navigate(dir: -1 | 1) {
+		let list = this.navList();
+		const i = this.navIndex();
+		if (dir === 1 && i === list.length - 1 && this.navMore()) {
+			await this.load(true);
+			list = this.items();
+		}
+		const next = list[i + dir];
+		if (next) this.openId.set(next.id);
+	}
+
+	openFromSimilar(e: { meme: Meme; list: Meme[] }) {
+		this.navOverride.set(e.list);
+		this.openId.set(e.meme.id);
+	}
+
+	closeDetail() {
+		this.openId.set(null);
+		this.navOverride.set(null);
+	}
+
 	onChanged(m: Meme) {
 		this.replace([m]);
 		this.loadTags();
 	}
 
 	onDeleted(id: number) {
-		this.openId.set(null);
+		this.closeDetail();
 		this.dropIds([id]);
 		this.loadTags();
 	}

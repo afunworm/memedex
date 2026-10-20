@@ -4,6 +4,7 @@ import { ImageStore } from '../images/image-store.service';
 import { EmbeddingService, toBlob } from '../search/embedding.service';
 import { VectorIndex } from '../search/vector-index.service';
 import { LOW_RES } from '../config';
+import { ImageEmbeddingService } from '../search/image-embedding.service';
 
 export interface MemeRow {
 	id: number;
@@ -87,6 +88,7 @@ export class MemesService {
 		private readonly images: ImageStore,
 		private readonly embeddings: EmbeddingService,
 		private readonly vectors: VectorIndex,
+		private readonly imageEmbeddings: ImageEmbeddingService,
 	) {}
 
 	private get db() {
@@ -215,6 +217,7 @@ export class MemesService {
 				errors.push({ name: f.originalname, error: e?.message ?? 'Upload failed' });
 			}
 		}
+		this.imageEmbeddings.queue(created);
 		return { created: this.dtos(sub, created), duplicates: this.dtos(sub, duplicates), errors };
 	}
 
@@ -354,12 +357,13 @@ export class MemesService {
 		this.db
 			.prepare(
 				`UPDATE memes SET sha256 = ?, ext = ?, mime = ?, width = ?, height = ?, animated = ?, bytes = ?,
-				 phash = ?, sig = ?, improve_status = 'none', improve_error = NULL, updated_at = datetime('now') WHERE id = ?`,
+				 phash = ?, sig = ?, clip = NULL, improve_status = 'none', improve_error = NULL, updated_at = datetime('now') WHERE id = ?`,
 			)
 			.run(img.sha256, img.ext, img.mime, img.width, img.height, img.animated ? 1 : 0, img.bytes, img.phash, img.sig, id);
 		this.db.prepare(`DELETE FROM meme_candidates WHERE meme_id = ?`).run(id);
 		await this.images.removeCandidates(id);
 		if (old.sha256 !== img.sha256) await this.images.remove(sub, old.sha256, old.ext);
+		this.imageEmbeddings.queue([id]);
 		return this.dtos(sub, [id])[0];
 	}
 

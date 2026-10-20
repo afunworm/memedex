@@ -1,6 +1,6 @@
 import { Component, computed, effect, HostListener, inject, input, output, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Api, Candidate, errorMessage, ImproveMode, Meme } from '../api';
+import { Api, Candidate, errorMessage, ImproveMode, Meme, SimilarBy } from '../api';
 import { copyImage, downloadImage, extensionFor } from '../clipboard';
 import { Toasts } from '../toast';
 
@@ -28,7 +28,13 @@ import { Toasts } from '../toast';
 						}
 					</div>
 				}
-				<div class="flex min-h-0 flex-1 items-center justify-center p-4">
+				<div class="relative flex min-h-0 flex-1 items-center justify-center p-4">
+					@if (hasPrev()) {
+						<button type="button" class="absolute left-2 top-1/2 z-10 grid size-11 -translate-y-1/2 place-items-center rounded-full bg-black/60 text-2xl text-white backdrop-blur transition hover:bg-amber-400 hover:text-zinc-950" (click)="go(-1)" aria-label="Previous image (Left arrow)" title="Previous (←)">‹</button>
+					}
+					@if (hasNext()) {
+						<button type="button" class="absolute right-2 top-1/2 z-10 grid size-11 -translate-y-1/2 place-items-center rounded-full bg-black/60 text-2xl text-white backdrop-blur transition hover:bg-amber-400 hover:text-zinc-950" (click)="go(1)" aria-label="Next image (Right arrow)" title="Next (→)">›</button>
+					}
 					<img [src]="shownUrl()" [alt]="meme().title ?? ''" class="max-h-full max-w-full rounded-lg object-contain shadow-xl" />
 				</div>
 				<div class="flex flex-wrap items-center justify-center gap-2 border-t border-zinc-800 bg-zinc-950/80 p-3">
@@ -43,6 +49,9 @@ import { Toasts } from '../toast';
 			<div class="flex w-full flex-col border-zinc-800 lg:w-[26rem] lg:border-l">
 				<div class="flex items-center gap-2 border-b border-zinc-800 px-5 py-3">
 					<input class="input border-transparent bg-transparent px-0 text-lg font-semibold focus:ring-0" placeholder="Untitled" [(ngModel)]="title" (ngModelChange)="dirty.set(true)" />
+					@if (position()) {
+						<span class="shrink-0 text-xs tabular-nums text-zinc-500">{{ position() }}</span>
+					}
 					<button type="button" class="btn-ghost -mr-2 shrink-0 px-2 text-xl leading-none" (click)="close()" aria-label="Close">×</button>
 				</div>
 
@@ -74,6 +83,56 @@ import { Toasts } from '../toast';
 							}
 						</section>
 					}
+
+					<section>
+						<div class="flex items-center justify-between gap-2">
+							<h3 class="text-sm font-semibold text-zinc-200">More like this</h3>
+							<div class="flex rounded-full border border-zinc-800 bg-zinc-900 p-0.5 text-xs">
+								@for (t of similarTabs; track t.by) {
+									<button
+										type="button"
+										class="rounded-full px-2.5 py-1 font-medium transition"
+										[class]="similarBy() === t.by ? 'bg-amber-400 text-zinc-950' : 'text-zinc-400 hover:text-zinc-100'"
+										(click)="similarBy.set(t.by)"
+										[title]="t.hint"
+									>
+										{{ t.label }}
+									</button>
+								}
+							</div>
+						</div>
+						@if (similarLoading()) {
+							<p class="mt-3 text-xs text-zinc-500">Looking…</p>
+						} @else {
+							@if (similar().length) {
+								<div class="-mx-5 mt-3 flex gap-2 overflow-x-auto px-5 pb-1">
+									@for (s of similar(); track s.id) {
+										<div class="group relative shrink-0">
+											<button
+												type="button"
+												class="block size-24 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 transition hover:border-amber-400"
+												(click)="openOther.emit({ meme: s, list: similar() })"
+												[title]="s.matched ? '“' + s.matched + '”' : (s.title ?? '')"
+											>
+												<img [src]="s.thumbUrl" [alt]="s.title ?? ''" loading="lazy" class="size-full object-cover" />
+											</button>
+											<button
+												type="button"
+												class="absolute bottom-1 right-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-white backdrop-blur hover:bg-amber-400 hover:text-zinc-950"
+												[class.!bg-emerald-500]="copiedId() === s.id"
+												(click)="copyOther(s)"
+											>
+												{{ copiedId() === s.id ? 'Copied' : 'Copy' }}
+											</button>
+										</div>
+									}
+								</div>
+							}
+							@if (similarNote()) {
+								<p class="mt-2 text-xs text-zinc-500">{{ similarNote() }}</p>
+							}
+						}
+					</section>
 
 					<section>
 						<div class="flex items-center justify-between">
@@ -189,6 +248,14 @@ export class MemeDetail {
 	readonly improveRequested = output<{ id: number; mode: ImproveMode }>();
 	/** Whether a reverse image search service is set up. */
 	readonly canSearch = input(false);
+	/** Previous / next in the list the image was opened from. */
+	readonly hasPrev = input(false);
+	readonly hasNext = input(false);
+	/** e.g. "3 / 40". */
+	readonly position = input<string | null>(null);
+	readonly navigate = output<-1 | 1>();
+	/** Open another meme (from "More like this"); its list becomes the one next / previous move through. */
+	readonly openOther = output<{ meme: Meme; list: Meme[] }>();
 	readonly closed = output<void>();
 
 	protected title = '';
@@ -199,6 +266,17 @@ export class MemeDetail {
 	protected readonly saving = signal(false);
 	protected readonly aiBusy = computed(() => ['queued', 'running'].includes(this.meme().aiStatus));
 	protected lineCount = () => this.lines().length;
+
+	protected readonly similarTabs: { by: SimilarBy; label: string; hint: string }[] = [
+		{ by: 'meaning', label: 'Same vibe', hint: 'Says something similar (from the descriptions)' },
+		{ by: 'look', label: 'Same look', hint: 'Same template, character or scene' },
+	];
+	protected readonly similarBy = signal<SimilarBy>('meaning');
+	protected readonly similar = signal<Meme[]>([]);
+	protected readonly similarNote = signal<string | null>(null);
+	protected readonly similarLoading = signal(false);
+	protected readonly copiedId = signal<number | null>(null);
+	private similarSeq = 0;
 
 	protected readonly candidates = signal<Candidate[]>([]);
 	/** Which version the big image shows: null = current, else a candidate id. */
@@ -222,6 +300,13 @@ export class MemeDetail {
 			});
 		});
 
+		// "More like this" for the meme on screen and the chosen tab
+		effect(() => {
+			const id = this.meme().id;
+			const by = this.similarBy();
+			untracked(() => this.loadSimilar(id, by));
+		});
+
 		// (Re)load better versions when the meme or its count of them changes
 		effect(() => {
 			const { id, candidates } = this.meme();
@@ -243,6 +328,48 @@ export class MemeDetail {
 		} catch (e) {
 			this.toasts.error(errorMessage(e));
 		}
+	}
+
+	private async loadSimilar(id: number, by: SimilarBy) {
+		const seq = ++this.similarSeq;
+		this.similarLoading.set(true);
+		try {
+			const r = await this.api.similar(id, by);
+			if (seq !== this.similarSeq) return; // moved on to another image
+			this.similar.set(r.items);
+			this.similarNote.set(r.note);
+		} catch (e) {
+			if (seq === this.similarSeq) this.similarNote.set(errorMessage(e));
+		} finally {
+			if (seq === this.similarSeq) this.similarLoading.set(false);
+		}
+	}
+
+	async copyOther(m: Meme) {
+		try {
+			await copyImage(m.url);
+			this.copiedId.set(m.id);
+			setTimeout(() => this.copiedId.update((v) => (v === m.id ? null : v)), 1800);
+		} catch (e) {
+			this.toasts.error(errorMessage(e));
+		}
+	}
+
+	/** Next / previous image; unsaved edits are saved first. */
+	async go(dir: -1 | 1) {
+		if (dir === -1 ? !this.hasPrev() : !this.hasNext()) return;
+		if (this.dirty()) await this.save();
+		this.navigate.emit(dir);
+	}
+
+	@HostListener('document:keydown', ['$event'])
+	onKey(e: KeyboardEvent) {
+		if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+		const t = e.target as HTMLElement | null;
+		// Arrow keys move the cursor while typing
+		if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+		e.preventDefault();
+		this.go(e.key === 'ArrowLeft' ? -1 : 1);
 	}
 
 	improve(mode: ImproveMode) {

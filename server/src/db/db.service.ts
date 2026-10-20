@@ -101,6 +101,11 @@ const MIGRATIONS: string[] = [
 	);
 	CREATE INDEX meme_candidates_meme ON meme_candidates(meme_id);
 	`,
+	`
+	-- CLIP embedding of the first frame (Float32 x 512, L2-normalised) for "More like this → Same look".
+	-- Filled in the background after upload, and at startup for older rows.
+	ALTER TABLE memes ADD COLUMN clip BLOB /* see ImageEmbeddingService */;
+	`,
 ];
 
 @Injectable()

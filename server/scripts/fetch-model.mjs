@@ -1,8 +1,9 @@
 // Downloads the models into MODEL_DIR (default ./models) so the Docker image
 // carries them and the server never fetches them at runtime:
 // - the sentence-embedding model for search
+// - CLIP (image model) for "More like this → Same look"
 // - Real-ESRGAN General x4v3 (ONNX, Qualcomm AI Hub export) for "AI enhance"
-import { env, pipeline } from '@huggingface/transformers';
+import { AutoProcessor, CLIPVisionModelWithProjection, env, pipeline } from '@huggingface/transformers';
 import AdmZip from 'adm-zip';
 import { createHash } from 'crypto';
 import { existsSync, mkdirSync } from 'fs';
@@ -15,6 +16,12 @@ env.cacheDir = DIR;
 const embed = await pipeline('feature-extraction', MODEL, { dtype: 'q8' });
 const out = await embed(['really?', 'what did you just say'], { pooling: 'mean', normalize: true });
 console.log(`${MODEL} ready in ${DIR}: ${out.dims.join('x')}`);
+
+// CLIP image model for "More like this → Same look"
+const CLIP = process.env.CLIP_MODEL || 'Xenova/clip-vit-base-patch32';
+await AutoProcessor.from_pretrained(CLIP);
+await CLIPVisionModelWithProjection.from_pretrained(CLIP, { dtype: 'q8' });
+console.log(`${CLIP} ready in ${DIR}`);
 
 const ESRGAN_URL =
 	'https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/real_esrgan_general_x4v3/releases/v0.64.0/real_esrgan_general_x4v3-onnx-float.zip';

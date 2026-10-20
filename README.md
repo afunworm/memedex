@@ -12,10 +12,12 @@ You know the meme you want: the dog raising its eyebrows, the slow clap, the "th
 - **Find a reaction:** type what you want to say ("eye roll", "slow clap", "really?"). It's instant and free, with no AI call involved.
 - **Reply to a message:** paste the message you got, or a screenshot of it. Claude works out what a good reply would say, searches your library, and picks the best few with a reason for each.
 - **Describe a situation:** "my coworker presented my idea as his own in the meeting". Claude works out how it feels and what you'd say about it, then picks memes that capture it.
+- **More like this:** in the image view. **Same vibe** finds memes that say something similar (from their descriptions); **Same look** finds the same template, character or scene, even with a different caption (from the picture itself). Each result has a Copy button.
+- **Browse without closing:** ← → (or the arrows on the image) move to the previous / next image in whatever list you opened it from: your library, search results, Claude's picks, or "More like this".
 - **Find duplicates:** finds images that are the same picture at another size, format or quality. Keep one (the largest is suggested), and the others' descriptions and tags are merged into it before they're deleted.
 - **Improve quality** for low-res images, two ways. Results always wait for your review: you compare **Current vs. New** side by side and choose **Use this version** or **Discard**. Nothing is replaced without your OK, and descriptions and tags always stay.
   - **🔎 Find better copy online:** reverse image search (TinEye or SerpApi / Google Lens, with your own key) finds bigger copies. They're downloaded and only offered if they're truly the same picture (the same check the duplicate finder uses).
-  - **✨ AI enhance:** 4× upscaling with Real-ESRGAN, running locally on the server. It's free and offline, and good at blur and JPEG blockiness, but it can warp small text, so check before using.
+  - **✨ AI enhance:** upscaling with Real-ESRGAN, running locally on the server, to at most 1200 px wide. It's free and offline, and good at blur and JPEG blockiness, but it can warp small text, so check before using.
 - **Copy image** puts the meme on your clipboard, ready to paste into any chat.
 - **Private libraries:** each person who signs in gets their own library and uses their own Claude API key, chosen in Settings.
 
@@ -27,6 +29,7 @@ You know the meme you want: the dog raising its eyebrows, the slow clap, the "th
 | Server | NestJS + SQLite (`server/`). It also serves the web app, so everything runs in one container. |
 | Sign-in | OIDC with PKCE in the browser. Register MemeDex as a **public** client; no client secret is used. |
 | AI | Claude, through each user's own API key. Keys are stored encrypted with `SETTINGS_ENCRYPTION_KEY` and never sent back to the browser. You can pick Opus 5.5, Sonnet 5.5 or Haiku 5.5. |
+| Image similarity | CLIP (`clip-vit-base-patch32`, image half only, ~86 MB), run locally. Each image is indexed in the background after upload (~30 ms each); existing images are indexed at startup. |
 | Upscaling | Real-ESRGAN General x4v3 (ONNX, ~5 MB), baked into the image and run on CPU in tiles. A typical meme takes a few seconds. |
 | Search | A small embedding model (`all-MiniLM-L6-v2`) runs inside the container, with no external API, plus SQLite full-text search. |
 

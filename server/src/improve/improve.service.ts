@@ -23,10 +23,11 @@ export type ImproveMode = 'web' | 'enhance' | 'auto';
 const MIN_GAIN = 1.2;
 /** How many search results to download and check before giving up. */
 const MAX_DOWNLOADS = 15;
-/** Bigger than this (longer side) doesn't need, or can't afford, AI upscaling. */
-const MAX_ENHANCE_INPUT = 1200;
-/** Upscaled results are scaled down to at most this (longer side). */
-const MAX_ENHANCE_OUTPUT = 2400;
+/**
+ * AI-enhanced results are at most this wide: plenty for a meme in a chat.
+ * Images already this wide aren't enhanced at all.
+ */
+const MAX_ENHANCE_WIDTH = 1200;
 /** Jobs at once (each search or upscale). */
 const CONCURRENCY = 2;
 
@@ -201,17 +202,17 @@ export class ImproveService implements OnApplicationBootstrap {
 
 	private async enhance(sub: string, r: MemeRow) {
 		if (r.animated) throw new NothingFound("Animated GIFs can't be enhanced (the animation would be lost)");
-		if (Math.max(r.width ?? 0, r.height ?? 0) > MAX_ENHANCE_INPUT) {
-			throw new NothingFound(`Already large (over ${MAX_ENHANCE_INPUT} px); AI enhance is for small images`);
+		if ((r.width ?? 0) >= MAX_ENHANCE_WIDTH) {
+			throw new NothingFound(`Already ${r.width} px wide; AI enhance is for images under ${MAX_ENHANCE_WIDTH} px`);
 		}
 		const up = await this.upscaler.upscale(this.images.fullPath(sub, r.sha256, r.ext));
 		let img = sharp(up.data, { raw: { width: up.width, height: up.height, channels: up.channels } });
 		let { width, height } = up;
-		if (Math.max(width, height) > MAX_ENHANCE_OUTPUT) {
-			img = img.resize({ width: MAX_ENHANCE_OUTPUT, height: MAX_ENHANCE_OUTPUT, fit: 'inside', kernel: 'lanczos3' });
-			const k = MAX_ENHANCE_OUTPUT / Math.max(width, height);
-			width = Math.round(width * k);
-			height = Math.round(height * k);
+		// The model always makes it 4x; scaling the result down to the cap keeps it sharp
+		if (width > MAX_ENHANCE_WIDTH) {
+			height = Math.round((height * MAX_ENHANCE_WIDTH) / width);
+			width = MAX_ENHANCE_WIDTH;
+			img = img.resize({ width, height, kernel: 'lanczos3' });
 		}
 		// Keep the original's kind of file: photos stay JPEG, graphics PNG
 		let fmt = FORMATS.png;

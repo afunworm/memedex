@@ -21,9 +21,12 @@ import { DuplicatesController } from './duplicates/duplicates.controller';
 import { UpscalerService } from './improve/upscaler.service';
 import { ImproveService } from './improve/improve.service';
 import { ImproveController } from './improve/improve.controller';
+import { ImageEmbeddingService } from './search/image-embedding.service';
+import { SimilarService } from './search/similar.service';
+import { SimilarController } from './search/similar.controller';
 
 @Module({
-	controllers: [EnvController, SettingsController, ImagesController, MemesController, SearchController, DuplicatesController, ImproveController],
+	controllers: [EnvController, SettingsController, ImagesController, MemesController, SearchController, DuplicatesController, ImproveController, SimilarController],
 	providers: [
 		DbService,
 		AuthService,
@@ -38,6 +41,8 @@ import { ImproveController } from './improve/improve.controller';
 		DuplicatesService,
 		UpscalerService,
 		ImproveService,
+		ImageEmbeddingService,
+		SimilarService,
 		{ provide: APP_GUARD, useClass: AuthGuard },
 	],
 })

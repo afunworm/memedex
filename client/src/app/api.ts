@@ -29,6 +29,8 @@ export interface Meme {
 	matched?: string | null;
 	/** Respond only: why Claude picked it. */
 	reason?: string;
+	/** "More like this" only: how close it is (0..1). */
+	similarity?: number;
 }
 
 export interface Settings {
@@ -57,6 +59,9 @@ export interface Candidate {
 }
 
 export type ImproveMode = 'web' | 'enhance' | 'auto';
+
+/** "More like this": meaning = same vibe (descriptions), look = same template / character / scene. */
+export type SimilarBy = 'meaning' | 'look';
 
 export interface Me extends Settings {
 	sub: string;
@@ -141,6 +146,10 @@ export class Api {
 
 	improve(ids: number[], mode: ImproveMode) {
 		return firstValueFrom(this.http.post<{ queued: number[] }>('/api/memes/improve', { ids, mode }));
+	}
+
+	similar(id: number, by: SimilarBy) {
+		return firstValueFrom(this.http.get<{ items: Meme[]; note: string | null }>(`/api/memes/${id}/similar`, { params: { by } }));
 	}
 
 	candidates(id: number) {

@@ -14,6 +14,8 @@ export const PUBLIC_DIR = resolve(process.env.PUBLIC_DIR || './public');
 /** Embedding model, downloaded at build time by scripts/fetch-model.mjs. */
 export const MODEL_DIR = resolve(process.env.MODEL_DIR || './models');
 export const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || 'Xenova/all-MiniLM-L6-v2';
+/** Image model for "Same look" (CLIP image embeddings, 512 dimensions). */
+export const CLIP_MODEL = process.env.CLIP_MODEL || 'Xenova/clip-vit-base-patch32';
 /** Real-ESRGAN General x4v3 (ONNX), also downloaded by scripts/fetch-model.mjs. */
 export const UPSCALE_MODEL = join(MODEL_DIR, 'real-esrgan', 'real_esrgan_general_x4v3.onnx');
 
