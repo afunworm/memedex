@@ -44,9 +44,17 @@ docker compose up -d --build
 | `OIDC_CLIENT_ID` | The public client registered for MemeDex |
 | `SETTINGS_ENCRYPTION_KEY` | At least 32 characters (`openssl rand -base64 32`). Encrypts users' Claude API keys. |
 
-In your OIDC provider, register:
-- redirect URI `https://<host>/callback`
-- post-logout redirect URI `https://<host>`
+### OIDC setup
+
+Create a client for MemeDex in your OIDC provider (e.g. Pocket ID) with:
+
+- [ ] **Public client: on.** MemeDex signs in from the browser and never sends a client secret. With a confidential client, sign-in fails at the token step. Ignore any secret the provider shows.
+- [ ] **PKCE: on** (recommended). MemeDex always uses PKCE; turning this on makes the provider insist on it.
+- [ ] **Redirect (callback) URI:** `https://<host>/callback`
+- [ ] **Post-logout redirect URI:** `https://<host>`
+- [ ] Copy the client ID into `OIDC_CLIENT_ID`, and the provider's base URL into `OIDC_ISSUER`.
+
+For local development, also add `http://localhost:4200/callback` and `http://localhost:4200`, or use a separate dev client.
 
 The compose file joins the external `dokploy-network`. The container listens on port 8080.
 
